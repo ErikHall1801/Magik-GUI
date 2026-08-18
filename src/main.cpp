@@ -64,6 +64,21 @@ std::string handle_key_press()
     return "";
 }
 
+// Function template for making ImGui::Combo cleaner to work with
+template<typename Enum>
+bool EnumCombo(const char* label, Enum* value, const char* const items[], int item_count)
+{
+    int current = static_cast<int>(*value);
+    bool changed = ImGui::Combo(label, &current, items, item_count);
+
+    if (changed)
+    {
+        *value = static_cast<Enum>(current);
+    }
+
+    return changed;
+}
+
 enum class MaterialType
 {
     Dielectric,
@@ -208,12 +223,22 @@ int main()
     static int selected_material = -1;
 
     static char material_name[128] = "";
-    static float ior = 1.0f;
-    static ImVec4 rgb_color = ImVec4{1.0f, 1.0f, 1.0f, 1.0f};
-    static bool transmissive = false;
 
-    static int selected_dielectric_type = 0;
-    static int selected_conductor_type = 0;
+    static int selected_material_type = 0;
+
+    static Dielectric new_dielectric{
+        DielectricType::Glass,
+        1.0f,
+        ImVec4{1.0f, 1.0f, 1.0f, 1.0f},
+        false
+    };
+
+    static Conductor new_conductor{
+        ConductorType::Copper,
+        1.0f
+    };
+
+
 
 	// Render loop
 	while (!glfwWindowShouldClose(window))
@@ -272,7 +297,12 @@ int main()
         {
             UniversalMaterial& material = materials[selected_material];
 
-            ImGui::Text("%s", material.material_name.c_str());
+            //ImGui::Combo("Material type", &selected_material_type, material_types, IM_ARRAYSIZE(material_types));
+            std::string material_type_name = static_cast<int>(material.type) == 0 ? "Dielectric" : "Conductor";
+
+            ImGui::Text(material_type_name.c_str());
+            
+            //ImGui::Text(material_type_name.c_str());
 
             // Dielectric and conductors have different properties, so only display the appropriate properties for the selected material
             switch (material.type)
@@ -280,6 +310,8 @@ int main()
                 case MaterialType::Dielectric:
                 {
                     Dielectric& dielectric = std::get<Dielectric>(material.properties);
+
+                    EnumCombo("Dielectric type", &dielectric.type, dielectric_types, IM_ARRAYSIZE(dielectric_types));
 
                     ImGui::SliderFloat("IOR", &dielectric.specular_ior, 1.0f, 2.0f);
 
@@ -290,12 +322,15 @@ int main()
 
                     ImGui::Checkbox("Transmissive", &dielectric.transmissive);
 
+
                     break;
                 }
 
                 case MaterialType::Conductor:
                 {
                     Conductor& conductor = std::get<Conductor>(material.properties);
+
+                    EnumCombo("Conductor type", &conductor.type, conductor_types, IM_ARRAYSIZE(conductor_types));
 
                     ImGui::SliderFloat("IOR", &conductor.ior, 1.0f, 2.0f);
 
@@ -406,8 +441,6 @@ int main()
                 
                 ImGui::InputText("Material Name", material_name, IM_ARRAYSIZE(material_name));
 
-                static int selected_material_type = 0;
-
                 // Dropdown for choosing dielectric/conductor
                 ImGui::Combo("Material type", &selected_material_type, material_types, IM_ARRAYSIZE(material_types));
 
@@ -417,19 +450,20 @@ int main()
                 {
                     case 0:
                     {
-                        ImGui::Combo("Dielectric type", &selected_dielectric_type, dielectric_types, IM_ARRAYSIZE(dielectric_types));
+                        EnumCombo("Dielectric type", &new_dielectric.type, dielectric_types, IM_ARRAYSIZE(dielectric_types));
 
-                        ImGui::SliderFloat("Specular IOR", &ior, 1.0f, 2.0f);
-                        ImGui::ColorEdit3("Dielectric Color", &rgb_color.x, ImGuiColorEditFlags_PickerHueWheel);
-                        ImGui::Checkbox("Transmissive", &transmissive);
+                        ImGui::SliderFloat("Specular IOR", &new_dielectric.specular_ior, 1.0f, 2.0f);
+                        ImGui::ColorEdit3("Dielectric Color", &new_dielectric.rgb_color.x, ImGuiColorEditFlags_PickerHueWheel);
+                        ImGui::Checkbox("Transmissive", &new_dielectric.transmissive);
 
                         break;
                     }
 
                     case 1:
                     {
-                        ImGui::Combo("Conductor type", &selected_conductor_type, conductor_types, IM_ARRAYSIZE(conductor_types));
-                        ImGui::SliderFloat("IOR", &ior, 1.0f, 2.0f);
+                        EnumCombo("Conductor type", &new_conductor.type, conductor_types, IM_ARRAYSIZE(conductor_types));
+
+                        ImGui::SliderFloat("IOR", &new_conductor.ior, 1.0f, 2.0f);
            
                         break;
                     }
@@ -449,13 +483,7 @@ int main()
                         case 0:
                         {
                             material.type = MaterialType::Dielectric;
-
-                            material.properties = Dielectric{
-                                static_cast<DielectricType>(selected_dielectric_type),
-                                ior,
-                                rgb_color,
-                                transmissive
-                            };
+                            material.properties = new_dielectric;              
 
                             break;
                         }
@@ -463,11 +491,7 @@ int main()
                         case 1:
                         {
                             material.type = MaterialType::Conductor;
-
-                            material.properties = Conductor{
-                                static_cast<ConductorType>(selected_conductor_type),
-                                ior
-                            };
+                            material.properties = new_conductor;
 
                             break;
                         }
@@ -477,12 +501,20 @@ int main()
                     selected_material = materials.size() - 1;
 
                     material_name[0] = '\0';
-                    ior = 1.0f;
-                    rgb_color = ImVec4{1.0f, 1.0f, 1.0f, 1.0f};
-                    transmissive = false;
 
-                    selected_dielectric_type = 0;
-                    selected_conductor_type = 0;
+                    new_dielectric = Dielectric{
+                        DielectricType::Glass,
+                        1.0f,
+                        ImVec4{1, 1, 1, 1},
+                        false
+                    };
+
+                    new_conductor = Conductor{
+                        ConductorType::Copper,
+                        1.0f
+                    };
+
+                    selected_material_type = 0;
 
                     ImGui::CloseCurrentPopup();
                 }
