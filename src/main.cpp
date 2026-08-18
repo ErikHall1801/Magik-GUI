@@ -11,10 +11,10 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
-GLuint load_image(int& width, int& height, int& channels)
+GLuint load_image(int& width, int& height, int& channels, const char* filename)
 {
     unsigned char* pixels = stbi_load(
-        "assets/example_render.png",
+        filename,
         &width,
         &height,
         &channels,
@@ -152,7 +152,7 @@ int main()
 	// Create window
 	int height = 1000;
 	int width = 1400;
-	GLFWwindow* window = glfwCreateWindow(width, height, "Test application", nullptr, nullptr);
+	GLFWwindow* window = glfwCreateWindow(width, height, "Magik GUI 0.1.0", nullptr, nullptr);
 
 	if (!window)
 	{
@@ -189,9 +189,9 @@ int main()
     // Load ImGui's default font first to use this as default
     ImFont* default_font = io.Fonts->AddFontDefault();
 
-    ImFont* italic_font = io.Fonts->AddFontFromFileTTF(
-        "assets/fonts/PlaywriteDELAGuides-Regular.ttf",
-        30.0f // Font size
+    ImFont* google_sans_regular = io.Fonts->AddFontFromFileTTF(
+        "assets/fonts/GoogleSans-Regular.ttf",
+        18.0f // Font size
     );
 
     // Setup Dear ImGui style
@@ -215,7 +215,18 @@ int main()
     int image_height;
     int channels;
 
-    GLuint texture = load_image(image_width, image_height, channels);
+    int icon_height;
+    int icon_width;
+    int icon_channels;
+
+    GLuint texture = load_image(image_width, image_height, channels, "assets/example_render.png");
+    unsigned char* _icon = stbi_load("assets/icon.png", &icon_width, &icon_height, &icon_channels, 4); // Free !!! 
+
+    GLFWimage icon;
+    icon.height = icon_height;
+    icon.width = icon_width;
+    icon.pixels = _icon;
+    glfwSetWindowIcon(window, 1, &icon);
 
     static std::vector<std::string> logs;
 
@@ -238,8 +249,6 @@ int main()
         1.0f
     };
 
-
-
 	// Render loop
 	while (!glfwWindowShouldClose(window))
 	{
@@ -260,7 +269,10 @@ int main()
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-         if (ImGui::IsKeyPressed(ImGuiKey_Escape))
+        // Set font
+        ImGui::PushFont(google_sans_regular);
+
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
         {
             glfwSetWindowShouldClose(window, true);
         }
@@ -274,7 +286,8 @@ int main()
         float display_window_height = viewport->Size.y - console_window_height;
 
         // Setting up settings window
-
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(36.0f/255.0f, 36.0f/255.0f, 36.0f/255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(48.0f/255.0f, 48.0f/255.0f, 48.0f/255.0f, 1.0f));
         ImGui::SetNextWindowPos(
             ImVec2(viewport->Pos.x + viewport->Size.x - settings_window_width,
                    viewport->Pos.y)
@@ -343,6 +356,8 @@ int main()
             ImGui::Text("No material selected");
         }
 
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
         ImGui::End();
 
         // Setting up console log window
@@ -355,6 +370,8 @@ int main()
             ImVec2(viewport->Size.x - settings_window_width, console_window_height)
         );
 
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(36.0f/255.0f, 36.0f/255.0f, 36.0f/255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(48.0f/255.0f, 48.0f/255.0f, 48.0f/255.0f, 1.0f));
         ImGui::Begin(
             "Console log",
             nullptr,
@@ -377,12 +394,17 @@ int main()
 
         //ImGui::PushFont(italic_font);
         //ImGui::Text("This is in italic");
-        //ImGui::PopFont();
-
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
         ImGui::End();
 
         // Setting up display window
+        //     ImGuiCol_TitleBg,               // Title bar
+        //     ImGuiCol_TitleBgActive,         // Title bar when focused
 
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(36.0f/255.0f, 36.0f/255.0f, 36.0f/255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(48.0f/255.0f, 48.0f/255.0f, 48.0f/255.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         ImGui::SetNextWindowPos(
             ImVec2(viewport->Pos.x, viewport->Pos.y)
         );
@@ -545,9 +567,13 @@ int main()
             ImGui::EndPopup();
         }
 
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
         ImGui::End();
 
         // Rendering
+        ImGui::PopFont();
         ImGui::Render();
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);

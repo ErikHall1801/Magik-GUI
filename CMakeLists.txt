@@ -18,10 +18,15 @@ target_link_libraries(magik_gui PRIVATE
     glad::glad 
     glfw 
     imgui::imgui
-
 )
 
 target_include_directories(magik_gui PRIVATE ${Stb_INCLUDE_DIR})
+
+add_custom_command(TARGET magik_gui POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+    "${CMAKE_SOURCE_DIR}/assets"
+    "$<TARGET_FILE_DIR:magik_gui>/assets"
+)
 
 if(WIN32)
     target_link_libraries(magik_gui PRIVATE opengl32)
