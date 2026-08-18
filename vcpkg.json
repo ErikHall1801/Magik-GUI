@@ -1,0 +1,8 @@
+{
+  "name": "magik-gui",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "glad",
+    "glfw3"
+  ]
+}
