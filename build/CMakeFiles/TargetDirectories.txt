@@ -1,3 +1,0 @@
-C:/Users/erikh/source/repos/Magik-GUI/build/CMakeFiles/magik_gui.dir
-C:/Users/erikh/source/repos/Magik-GUI/build/CMakeFiles/ALL_BUILD.dir
-C:/Users/erikh/source/repos/Magik-GUI/build/CMakeFiles/ZERO_CHECK.dir
