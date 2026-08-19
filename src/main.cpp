@@ -11,271 +11,256 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
-GLuint load_image(int& width, int& height, int& channels, const char* filename)
+static bool magik_gui_setup_glfw(GLFWwindow* &window, const int i_height, const int i_width)
 {
-    unsigned char* pixels = stbi_load(
-        filename,
-        &width,
-        &height,
-        &channels,
-        4
-    );
-
-    GLuint texture;
-
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-
-    stbi_image_free(pixels);
-
-    return texture;
-}
-
-std::string handle_key_press()
-{
-    if (ImGui::IsKeyPressed(ImGuiKey_A))
+    if(!glfwInit())
     {
-        return "A";
+        return false;
     }
 
-    if (ImGui::IsKeyPressed(ImGuiKey_W))
-    {
-        return "W";
-    }
-
-    if (ImGui::IsKeyPressed(ImGuiKey_S))
-    {
-        return "S";
-    }
-
-    if (ImGui::IsKeyPressed(ImGuiKey_D))
-    {
-        return "D";
-    }
-
-    return "";
-}
-
-// Function template for making ImGui::Combo cleaner to work with
-template<typename Enum>
-bool EnumCombo(const char* label, Enum* value, const char* const items[], int item_count)
-{
-    int current = static_cast<int>(*value);
-    bool changed = ImGui::Combo(label, &current, items, item_count);
-
-    if (changed)
-    {
-        *value = static_cast<Enum>(current);
-    }
-
-    return changed;
-}
-
-enum class MaterialType
-{
-    Dielectric,
-    Conductor
-};
-
-enum class DielectricType
-{
-    Glass,
-    Plastic
-};
-
-enum class ConductorType
-{
-    Copper,
-    Gold,
-    Iron
-};
-
-
-struct Dielectric
-{
-    DielectricType type;
-    float specular_ior;
-    ImVec4 rgb_color;
-    bool transmissive;
-};
-
-struct Conductor
-{
-    ConductorType type;
-    float ior;
-};
-
-struct UniversalMaterial
-{
-    MaterialType type;
-    std::variant<Dielectric, Conductor> properties;
-    std::string material_name;
-};
-
-const char* dielectric_types[] = {
-    "Glass",
-    "Plastic"
-};
-
-const char* conductor_types[] = {
-    "Copper",
-    "Gold",
-    "Iron"
-};
-
-const char* material_types[] = {
-    "Dielectric",
-    "Conductor"
-};
-
-int main()
-{
-	// Init GLFW lib
-	if (!glfwInit()) { return -1; }
-
-	// Tells glfw that we use version 3.3 of openGL
-	// So that if someone does not have this version the window creation
-	// will fail. 
-	// The "CORE_PROFILE" means we will not use backwards compatible features. 
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	// Create window
-	int height = 1000;
-	int width = 1400;
-	GLFWwindow* window = glfwCreateWindow(width, height, "Magik GUI 0.1.0", nullptr, nullptr);
+    window = glfwCreateWindow(i_width, i_height, "Magik GUI 0.1.0", nullptr, nullptr);
 
-	if (!window)
-	{
-		printf("Failed to create window ! \n");
-		glfwTerminate();
-		return -1;
-	}
+    if(!window)
+    {
+        printf("Failed to create glfw window ! \n");
+        glfwTerminate();
+        return false;
+    }
 
-	// Make context current ?
-	// Means the OpenGL rendering context is tied to the window
-	// Once the context is current, we can issue commands like
-	// clearing the buffer, drawing geometry etc. Since OpenGL 
-	// is a state machine
-	glfwMakeContextCurrent(window);
+    glfwMakeContextCurrent(window);
 
-	// Load OpenGL function pointers
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
 		printf("Failed to load OpenGL function pointers ! \n");
 		glfwTerminate();
-		return -1;
+		return false;
 	}
-
-
-    // Setup Dear ImGui context
-    float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-
-    // When adding fonts, the first font added will be used as  the default font
-    // Load ImGui's default font first to use this as default
-    ImFont* default_font = io.Fonts->AddFontDefault();
-
-    ImFont* google_sans_regular = io.Fonts->AddFontFromFileTTF(
-        "assets/fonts/GoogleSans-Regular.ttf",
-        18.0f // Font size
-    );
-
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-    //ImGui::StyleColorsLight();
-
-    // Setup scaling
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
-    style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-
-    // Our state
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
-	ImGui_ImplOpenGL3_Init("#version 330");
-
-    int image_width;
-    int image_height;
-    int channels;
 
     int icon_height;
     int icon_width;
     int icon_channels;
-
-    GLuint texture = load_image(image_width, image_height, channels, "assets/example_render.png");
-    unsigned char* _icon = stbi_load("assets/icon.png", &icon_width, &icon_height, &icon_channels, 4); // Free !!! 
-
+    unsigned char* _icon = stbi_load("assets/icon.png", &icon_width, &icon_height, &icon_channels, 4); // Must be freed !
     GLFWimage icon;
     icon.height = icon_height;
     icon.width = icon_width;
     icon.pixels = _icon;
     glfwSetWindowIcon(window, 1, &icon);
 
-    static std::vector<std::string> logs;
+    return true;
+}
 
-    static std::vector<UniversalMaterial> materials;
-    static int selected_material = -1;
+static void magik_gui_setup_imgui(GLFWwindow* window, ImFont* &gui_font, float& gui_scale)
+{
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
 
-    static char material_name[128] = "";
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    gui_font = io.Fonts->AddFontFromFileTTF("assets/fonts/GoogleSans-Regular.ttf", 18.0f);
+    gui_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
 
-    static int selected_material_type = 0;
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(gui_scale);
+    style.FontScaleDpi = gui_scale;
 
-    static Dielectric new_dielectric{
-        DielectricType::Glass,
-        1.0f,
-        ImVec4{1.0f, 1.0f, 1.0f, 1.0f},
-        false
-    };
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
 
-    static Conductor new_conductor{
-        ConductorType::Copper,
-        1.0f
-    };
+    ImGui_ImplOpenGL3_Init("#version 330");
+}
 
-	// Render loop
+struct magik_gui_image
+{
+    GLuint buffer;
+    int height;
+    int width;
+    int channels;
+};
+
+struct consol_data
+{
+    ImGuiTextBuffer buffer;
+    bool auto_scroll = true;
+
+    void clear()
+    {
+        buffer.clear();
+    }
+
+    void mlog(const char* fmt, ...) IM_FMTARGS(2)
+    {
+        va_list args;
+        va_start(args, fmt);
+        buffer.appendfv(fmt, args);
+        va_end(args);
+    }
+
+    void mprint()
+    {
+        ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::TextUnformatted(buffer.begin(), buffer.end());
+
+        if (auto_scroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+            ImGui::SetScrollHereY(1.0f);
+        }
+
+        ImGui::EndChild();
+    }
+};
+
+struct magik_gui_global_data
+{
+    ImFont* gui_font = nullptr;
+    float gui_size = 0.0f;
+
+    magik_gui_image picture_asset;
+
+    consol_data c_log;
+};
+
+static magik_gui_global_data g_data_instance;
+magik_gui_global_data* global_data = &g_data_instance;
+
+static magik_gui_image load_magik_gui_image(const char* filename)
+{
+    magik_gui_image result;
+
+    unsigned char* pixels = stbi_load(filename, &result.width, &result.height, &result.channels, 4);
+
+    glGenTextures(1, &result.buffer);
+    glBindTexture(GL_TEXTURE_2D, result.buffer);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, result.width, result.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+
+    stbi_image_free(pixels);
+
+    return result;
+}
+
+static void magik_gui_setup_global_data(ImFont* gui_font, float gui_size)
+{
+    global_data->gui_font = gui_font;
+    global_data->gui_size = gui_size;
+
+    global_data->picture_asset = load_magik_gui_image("assets/example_render.png");
+
+    global_data->c_log = consol_data();
+}
+
+// Free function
+
+static void style_begin()
+{
+    ImGui::PushFont(global_data->gui_font);
+
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(36.0f/255.0f, 36.0f/255.0f, 36.0f/255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(48.0f/255.0f, 48.0f/255.0f, 48.0f/255.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(24.0f/255.0f, 24.0f/255.0f, 24.0f/255.0f, 1.0f));
+}
+
+static void style_end()
+{
+    ImGui::PopFont();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleColor();
+}
+
+static void magik_gui_new_frame(GLFWwindow* window)
+{
+    glfwPollEvents();
+    if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
+    {
+        ImGui_ImplGlfw_Sleep(10);
+    }
+
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+}
+
+typedef void (*action_caller)(void*);
+
+static void magik_gui_window(const char* title, ImGuiWindowFlags flags, const ImVec2 window_pos, const ImVec2 window_size, action_caller user_function, void* user_data)
+{
+    style_begin();
+    ImGui::SetNextWindowPos(window_pos);
+    ImGui::SetNextWindowSize(window_size);
+    ImGui::Begin(title, nullptr, flags);
+
+    if(user_function) user_function(user_data);
+
+    style_end();
+    ImGui::End();
+}
+
+// Consol
+static void consol_function(void* user_data)
+{
+    global_data->c_log.mprint();
+}
+
+// Display window
+static void display_function(void* user_data)
+{
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+    ImGui::BeginChild("BgOverride", ImGui::GetContentRegionAvail(), false);
+
+    ImVec2 available_display_space = ImGui::GetContentRegionAvail();
+
+    float scale = std::min(
+        available_display_space.x / global_data->picture_asset.width,
+        available_display_space.y / global_data->picture_asset.height
+    );
+
+    scale = std::min(scale, 1.0f);
+
+    ImVec2 image_size(
+        global_data->picture_asset.width * scale,
+        global_data->picture_asset.height * scale
+    );
+
+    float offset_x = (available_display_space.x - image_size.x)*0.5;
+    float offset_y = (available_display_space.y - image_size.y)*0.5;
+
+    ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset_x, ImGui::GetCursorPosY() + offset_y));
+    ImGui::Image((ImTextureID)(intptr_t)global_data->picture_asset.buffer, image_size);
+
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+}
+
+int main()
+{
+    const int initial_height = 1000;
+    const int initial_width = 1400;
+    GLFWwindow* window;
+    if(!magik_gui_setup_glfw(window, initial_height, initial_width)) return -1;
+
+    ImFont* gui_font;
+    float gui_scale;
+    magik_gui_setup_imgui(window, gui_font, gui_scale);
+
+    magik_gui_setup_global_data(gui_font, gui_scale);
+
+    global_data->c_log.mlog("Startup at %f seconds \n", ImGui::GetTime());
+
 	while (!glfwWindowShouldClose(window))
 	{
-        // Poll and handle events (inputs, window resize, etc.)
-        // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
-        // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
-        // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
-        // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-        glfwPollEvents();
-        if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
-        {
-            ImGui_ImplGlfw_Sleep(10);
-            continue;
-        }
+        if(ImGui::IsMouseDragging(ImGuiMouseButton_Left)) global_data->c_log.mlog("Mouse position is %f, %f \n", ImGui::GetMousePos().x, ImGui::GetMousePos().y);
 
-        // Start the Dear ImGui frame
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        // Set font
-        ImGui::PushFont(google_sans_regular);
-
-        if (ImGui::IsKeyPressed(ImGuiKey_Escape))
-        {
-            glfwSetWindowShouldClose(window, true);
-        }
+        magik_gui_new_frame(window);
 
         ImGuiViewport* viewport = ImGui::GetMainViewport();
 
@@ -285,303 +270,19 @@ int main()
         float display_window_width = viewport->Size.x - settings_window_width;
         float display_window_height = viewport->Size.y - console_window_height;
 
-        // Setting up settings window
-        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(36.0f/255.0f, 36.0f/255.0f, 36.0f/255.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(48.0f/255.0f, 48.0f/255.0f, 48.0f/255.0f, 1.0f));
-        ImGui::SetNextWindowPos(
-            ImVec2(viewport->Pos.x + viewport->Size.x - settings_window_width,
-                   viewport->Pos.y)
-        );
+        magik_gui_window("Settings", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x + viewport->Size.x - settings_window_width, viewport->Pos.y), ImVec2(settings_window_width, viewport->Size.y), nullptr, nullptr);
 
-        ImGui::SetNextWindowSize(
-            ImVec2(settings_window_width, viewport->Size.y)
-        );
+        magik_gui_window("Consol", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x, viewport->Pos.y + viewport->Size.y - console_window_height), ImVec2(viewport->Size.x - settings_window_width, console_window_height), consol_function, nullptr);
 
-        ImGui::Begin(
-            "Settings",
-            nullptr,
-            ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse
-        );
-
-        // Displays material information in the settings panel
-        if (selected_material >= 0 && selected_material < materials.size())
-        {
-            UniversalMaterial& material = materials[selected_material];
-
-            //ImGui::Combo("Material type", &selected_material_type, material_types, IM_ARRAYSIZE(material_types));
-            std::string material_type_name = static_cast<int>(material.type) == 0 ? "Dielectric" : "Conductor";
-
-            ImGui::Text(material_type_name.c_str());
-            
-            //ImGui::Text(material_type_name.c_str());
-
-            // Dielectric and conductors have different properties, so only display the appropriate properties for the selected material
-            switch (material.type)
-            {
-                case MaterialType::Dielectric:
-                {
-                    Dielectric& dielectric = std::get<Dielectric>(material.properties);
-
-                    EnumCombo("Dielectric type", &dielectric.type, dielectric_types, IM_ARRAYSIZE(dielectric_types));
-
-                    ImGui::SliderFloat("IOR", &dielectric.specular_ior, 1.0f, 2.0f);
-
-                    if (ImGui::ColorEdit3("Dielectric Color", &dielectric.rgb_color.x, ImGuiColorEditFlags_PickerHueWheel))
-                    {
-                        logs.push_back(std::format("Dielectric color changed to ({} {} {})", dielectric.rgb_color.x, dielectric.rgb_color.y, dielectric.rgb_color.z));
-                    }
-
-                    ImGui::Checkbox("Transmissive", &dielectric.transmissive);
-
-
-                    break;
-                }
-
-                case MaterialType::Conductor:
-                {
-                    Conductor& conductor = std::get<Conductor>(material.properties);
-
-                    EnumCombo("Conductor type", &conductor.type, conductor_types, IM_ARRAYSIZE(conductor_types));
-
-                    ImGui::SliderFloat("IOR", &conductor.ior, 1.0f, 2.0f);
-
-                    break;
-                }
-            }
-        }
-        else
-        {
-            ImGui::Text("No material selected");
-        }
-
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-        ImGui::End();
-
-        // Setting up console log window
-
-        ImGui::SetNextWindowPos(
-            ImVec2(viewport->Pos.x, viewport->Pos.y + viewport->Size.y - console_window_height)
-        );
-
-        ImGui::SetNextWindowSize(
-            ImVec2(viewport->Size.x - settings_window_width, console_window_height)
-        );
-
-        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(36.0f/255.0f, 36.0f/255.0f, 36.0f/255.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(48.0f/255.0f, 48.0f/255.0f, 48.0f/255.0f, 1.0f));
-        ImGui::Begin(
-            "Console log",
-            nullptr,
-            ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse
-        );
-
-        std::string key_pressed = handle_key_press();
-
-        if (!key_pressed.empty())
-        {
-            logs.push_back(key_pressed);
-        }
-
-        for (const std::string& message: logs)
-        {
-            ImGui::TextUnformatted(message.c_str());
-        }
-
-        //ImGui::PushFont(italic_font);
-        //ImGui::Text("This is in italic");
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-        ImGui::End();
-
-        // Setting up display window
-        //     ImGuiCol_TitleBg,               // Title bar
-        //     ImGuiCol_TitleBgActive,         // Title bar when focused
-
-        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(36.0f/255.0f, 36.0f/255.0f, 36.0f/255.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(48.0f/255.0f, 48.0f/255.0f, 48.0f/255.0f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        ImGui::SetNextWindowPos(
-            ImVec2(viewport->Pos.x, viewport->Pos.y)
-        );
-
-        ImGui::SetNextWindowSize(
-            ImVec2(display_window_width, display_window_height)
-        );
-
-        ImGui::Begin(
-            "Display",
-            nullptr,
-            ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse
-        );
-
-        ImVec2 available_display_space = ImGui::GetContentRegionAvail();
-
-        float scale = std::min(
-            available_display_space.x / image_width,
-            available_display_space.y / image_height
-        );
-
-        scale = std::min(scale, 1.0f);
-
-        ImVec2 image_size(
-            image_width * scale,
-            image_height * scale
-        );
-
-        float offset_x = (available_display_space.x - image_size.x)*0.5;
-        float offset_y = (available_display_space.y - image_size.y)*0.5;
-
-        // Draws the image centered in the display window 
-        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset_x, ImGui::GetCursorPosY() + offset_y));
-        ImGui::Image((ImTextureID)(intptr_t)texture, image_size);
-
-        // Open popup on right click in the display window
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-        {
-            ImGui::OpenPopup("DisplayContextMenu");
-        }
-
-        // The popup opens the material list
-        if (ImGui::BeginPopup("DisplayContextMenu"))
-        {
-            if (ImGui::Button("Add material"))
-            {
-                ImGui::OpenPopup("AddMaterialPopup");
-            }
-
-            // Adding a material requires specifying material properties
-            if (ImGui::BeginPopup("AddMaterialPopup"))
-            {
-                UniversalMaterial material;
-                
-                ImGui::InputText("Material Name", material_name, IM_ARRAYSIZE(material_name));
-
-                // Dropdown for choosing dielectric/conductor
-                ImGui::Combo("Material type", &selected_material_type, material_types, IM_ARRAYSIZE(material_types));
-
-                // Choose material properties
-                // The parameters that can be tweaked depends on the material
-                switch (selected_material_type)
-                {
-                    case 0:
-                    {
-                        EnumCombo("Dielectric type", &new_dielectric.type, dielectric_types, IM_ARRAYSIZE(dielectric_types));
-
-                        ImGui::SliderFloat("Specular IOR", &new_dielectric.specular_ior, 1.0f, 2.0f);
-                        ImGui::ColorEdit3("Dielectric Color", &new_dielectric.rgb_color.x, ImGuiColorEditFlags_PickerHueWheel);
-                        ImGui::Checkbox("Transmissive", &new_dielectric.transmissive);
-
-                        break;
-                    }
-
-                    case 1:
-                    {
-                        EnumCombo("Conductor type", &new_conductor.type, conductor_types, IM_ARRAYSIZE(conductor_types));
-
-                        ImGui::SliderFloat("IOR", &new_conductor.ior, 1.0f, 2.0f);
-           
-                        break;
-                    }
-                }
-
-                ImGui::Separator();
-
-                // Finishes the creation of the material and stores the new material in the material list
-                if (ImGui::Button("Create"))
-                {
-                    UniversalMaterial material;
-
-                    material.material_name = material_name;
-
-                    switch (selected_material_type)
-                    {
-                        case 0:
-                        {
-                            material.type = MaterialType::Dielectric;
-                            material.properties = new_dielectric;              
-
-                            break;
-                        }
-
-                        case 1:
-                        {
-                            material.type = MaterialType::Conductor;
-                            material.properties = new_conductor;
-
-                            break;
-                        }
-                    }
-
-                    materials.push_back(material);
-                    selected_material = materials.size() - 1;
-
-                    material_name[0] = '\0';
-
-                    new_dielectric = Dielectric{
-                        DielectricType::Glass,
-                        1.0f,
-                        ImVec4{1, 1, 1, 1},
-                        false
-                    };
-
-                    new_conductor = Conductor{
-                        ConductorType::Copper,
-                        1.0f
-                    };
-
-                    selected_material_type = 0;
-
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
-            }
-            
-            // Shows the list of materials
-            if (ImGui::BeginListBox("Materials"))
-            {
-                for (int i = 0; i < materials.size(); i++)
-                {
-                    bool selected = selected_material == i;
-
-                    if (ImGui::Selectable(materials[i].material_name.c_str(), selected))
-                    {
-                        selected_material = i;
-                    }
-
-                    if (selected)
-                    {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-
-                ImGui::EndListBox();
-            }
-
-            ImGui::EndPopup();
-        }
-
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-        ImGui::PopStyleColor();
-        ImGui::End();
+        magik_gui_window("Image", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x, viewport->Pos.y), ImVec2(display_window_width, display_window_height), display_function, nullptr);
 
         // Rendering
-        ImGui::PopFont();
         ImGui::Render();
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
         glViewport(0, 0, display_w, display_h);
-        glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
         glfwSwapBuffers(window);
 	}
 
