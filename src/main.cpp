@@ -81,7 +81,7 @@ struct magik_gui_image
     int channels;
 };
 
-struct consol_data
+struct console_data
 {
     ImGuiTextBuffer buffer;
     bool auto_scroll = true;
@@ -119,8 +119,94 @@ struct magik_gui_global_data
 
     magik_gui_image picture_asset;
 
-    consol_data c_log;
+    console_data c_log;
 };
+
+struct magik_gui_sliderfloat
+{
+    const char* label;
+    float value;
+    float min = 0.0f;
+    float max = 1.0f;
+
+    void show()
+    {
+        ImGui::SliderFloat(label, &value, min, max);
+    }
+};
+
+struct magik_gui_colorpicker
+{
+    const char* label;
+    ImVec4 color;
+    ImGuiColorEditFlags flags = ImGuiColorEditFlags_PickerHueWheel;
+
+    void show()
+    {
+        ImGui::ColorEdit3(label, &color.x, flags);
+    }
+};
+
+struct magik_gui_checkbox
+{
+    const char* label;
+    bool value;
+
+    void show()
+    {
+        ImGui::Checkbox(label, &value);
+    }
+};
+
+struct magik_gui_dropdown
+{
+    const char* label;
+    const char* const* elements;
+    int element_count;
+    int selected_element_index = 0;
+
+    void show()
+    {
+        ImGui::Combo(label, &selected_element_index, elements, element_count);
+    }
+};
+
+struct magik_gui_list
+{
+    const char* label;
+    const char* const* elements;
+    int element_count;
+    int selected_element_index = -1;
+
+    void show()
+    {
+        if (ImGui::BeginListBox(label))
+        {
+            for (int i = 0; i < element_count; i++)
+            {
+                bool selected = selected_element_index == i;
+
+                if (ImGui::Selectable(elements[i], selected))
+                {
+                    selected_element_index = i;
+                }
+
+                if (selected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+
+            ImGui::EndListBox();
+        }
+    }
+};
+
+template<typename... magik_gui_element>
+void magik_gui_show_interactive_elements(magik_gui_element&... elements)
+{
+    (elements.show(), ...);
+}
 
 static magik_gui_global_data g_data_instance;
 magik_gui_global_data* global_data = &g_data_instance;
@@ -153,7 +239,7 @@ static void magik_gui_setup_global_data(ImFont* gui_font, float gui_size)
 
     global_data->picture_asset = load_magik_gui_image("assets/example_render.png");
 
-    global_data->c_log = consol_data();
+    global_data->c_log = console_data();
 }
 
 // Free function
@@ -204,8 +290,68 @@ static void magik_gui_window(const char* title, ImGuiWindowFlags flags, const Im
     ImGui::End();
 }
 
-// Consol
-static void consol_function(void* user_data)
+// Placeholder interactive elements
+magik_gui_sliderfloat slider = magik_gui_sliderfloat{
+    "Test_slider",
+    1.0f,
+    0.0f,
+    1.0f
+};
+
+magik_gui_colorpicker color = magik_gui_colorpicker{
+    "Test_colorpicker",
+    ImVec4{1.0f, 1.0f, 1.0f, 1.0f}
+};
+
+magik_gui_sliderfloat slider2 = magik_gui_sliderfloat{
+    "Test_slider2",
+    0.0f,
+    0.0f,
+    1.0f
+};
+
+magik_gui_colorpicker color2 = magik_gui_colorpicker{
+    "Test_colorpicker2",
+    ImVec4{0.0f, 0.0f, 0.0f, 1.0f}
+};
+
+const char* material_types[] = {
+    "Dielectric",
+    "Conductor"
+};
+
+magik_gui_dropdown material_type_dropdown = magik_gui_dropdown{
+    "Material Type",
+    material_types,
+    2
+};
+
+magik_gui_list material_type_list = magik_gui_list{
+    "Material type",
+    material_types,
+    2
+};
+
+static void context_menu(const char* context_menu_name)
+{
+    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+    {
+        ImGui::OpenPopup(context_menu_name);
+    }
+
+    if (ImGui::BeginPopup(context_menu_name))
+    {
+        ImGui::TextUnformatted(context_menu_name);
+        ImGui::Separator();
+
+        magik_gui_show_interactive_elements(slider, color, material_type_dropdown, material_type_list);
+
+        ImGui::EndPopup();
+    }
+}
+
+// Console
+static void console_function(void* user_data)
 {
     global_data->c_log.mprint();
 }
@@ -236,6 +382,8 @@ static void display_function(void* user_data)
 
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset_x, ImGui::GetCursorPosY() + offset_y));
     ImGui::Image((ImTextureID)(intptr_t)global_data->picture_asset.buffer, image_size);
+
+    context_menu("DisplayContextMenu");
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -272,7 +420,7 @@ int main()
 
         magik_gui_window("Settings", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x + viewport->Size.x - settings_window_width, viewport->Pos.y), ImVec2(settings_window_width, viewport->Size.y), nullptr, nullptr);
 
-        magik_gui_window("Consol", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x, viewport->Pos.y + viewport->Size.y - console_window_height), ImVec2(viewport->Size.x - settings_window_width, console_window_height), consol_function, nullptr);
+        magik_gui_window("Console", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x, viewport->Pos.y + viewport->Size.y - console_window_height), ImVec2(viewport->Size.x - settings_window_width, console_window_height), console_function, nullptr);
 
         magik_gui_window("Image", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x, viewport->Pos.y), ImVec2(display_window_width, display_window_height), display_function, nullptr);
 
