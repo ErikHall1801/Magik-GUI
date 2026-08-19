@@ -60,8 +60,9 @@ static void magik_gui_setup_imgui(GLFWwindow* window, ImFont* &gui_font, float& 
     ImGui::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.ConfigFlags |= (ImGuiConfigFlags_NavEnableGamepad |
+                       ImGuiConfigFlags_NavEnableKeyboard |
+                       ImGuiConfigFlags_DockingEnable);
     gui_font = io.Fonts->AddFontFromFileTTF("assets/fonts/GoogleSans-Regular.ttf", 18.0f);
     gui_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor());
 
@@ -291,8 +292,10 @@ typedef void (*action_caller)(void*);
 static void magik_gui_window(const char* title, ImGuiWindowFlags flags, const ImVec2 window_pos, const ImVec2 window_size, action_caller user_function, void* user_data)
 {
     style_begin();
-    ImGui::SetNextWindowPos(window_pos);
-    ImGui::SetNextWindowSize(window_size);
+    /** NOTE: ImGuiCond_FirstUseEver means use persistent data if stored
+        Use ImGuiCond_Appearing to reset every time the window is shown */
+    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(window_size, ImGuiCond_Appearing);
     ImGui::Begin(title, nullptr, flags);
 
     if(user_function) user_function(user_data);
@@ -461,6 +464,9 @@ int main()
 
         magik_gui_new_frame(window);
 
+        // Make a dockable area that covers the whole viewport
+        ImGuiID viewport_dock = ImGui::DockSpaceOverViewport();
+
         ImGuiViewport* viewport = ImGui::GetMainViewport();
 
         float settings_window_width = viewport->Size.x*0.3f;
@@ -469,11 +475,33 @@ int main()
         float display_window_width = viewport->Size.x - settings_window_width;
         float display_window_height = viewport->Size.y - console_window_height;
 
-        magik_gui_window("Settings", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x + viewport->Size.x - settings_window_width, viewport->Pos.y), ImVec2(settings_window_width, viewport->Size.y), nullptr, nullptr);
+        magik_gui_window(
+            "Settings",
+            ImGuiWindowFlags_NoCollapse,
+            ImVec2(viewport->Pos.x + viewport->Size.x - settings_window_width, viewport->Pos.y),
+            ImVec2(settings_window_width, viewport->Size.y),
+            nullptr,
+            nullptr
+        );
 
-        magik_gui_window("Console", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x, viewport->Pos.y + viewport->Size.y - console_window_height), ImVec2(viewport->Size.x - settings_window_width, console_window_height), console_function, nullptr);
+        magik_gui_window(
+            "Console",
+            ImGuiWindowFlags_NoCollapse,
+            ImVec2(viewport->Pos.x, viewport->Pos.y + viewport->Size.y - console_window_height),
+            ImVec2(viewport->Size.x - settings_window_width, console_window_height),
+            console_function,
+            nullptr
+        );
 
-        magik_gui_window("Image", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, ImVec2(viewport->Pos.x, viewport->Pos.y), ImVec2(display_window_width, display_window_height), display_function, nullptr);
+        magik_gui_window(
+            "Image",
+            ImGuiWindowFlags_NoCollapse,
+            ImVec2(viewport->Pos.x, viewport->Pos.y),
+            ImVec2(display_window_width,
+                   display_window_height),
+            display_function,
+            nullptr
+        );
 
         // Rendering
         ImGui::Render();
