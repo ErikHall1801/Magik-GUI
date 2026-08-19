@@ -233,6 +233,16 @@ static magik_gui_image load_magik_gui_image(const char* filename)
     return result;
 }
 
+static void replace_magik_gui_image(magik_gui_image& image, const char* filename)
+{
+    if (image.buffer != 0)
+    {
+        glDeleteTextures(1, &image.buffer);
+    }
+
+    image = load_magik_gui_image(filename);
+}
+
 static void magik_gui_setup_global_data(ImFont* gui_font, float gui_size)
 {
     global_data->gui_font = gui_font;
@@ -366,7 +376,7 @@ static void context_menu(const char* context_menu_name)
             {
                 std::cout << "Selected: " << outPath << "\n";
 
-                global_data->picture_asset = load_magik_gui_image(outPath);
+                replace_magik_gui_image(global_data->picture_asset, outPath);
 
                 NFD_FreePathU8(outPath);
             }
