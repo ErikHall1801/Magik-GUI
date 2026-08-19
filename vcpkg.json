@@ -12,6 +12,7 @@
         "docking-experimental"
       ]
     },
-    "stb"
+    "stb",
+    "nativefiledialog-extended"
   ]
 }

@@ -7,6 +7,7 @@
 #include <vector>
 #include <variant>
 #include <format>
+#include <nfd.hpp>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -346,6 +347,39 @@ static void context_menu(const char* context_menu_name)
 
         magik_gui_show_interactive_elements(slider, color, material_type_dropdown, material_type_list);
 
+        if (ImGui::Button("Load image"))
+        {
+            nfdu8char_t* outPath = nullptr;
+
+            nfdu8filteritem_t filters[] = {
+                { "Images", "png,jpg,jpeg" }
+            };
+
+            nfdopendialogu8args_t args = {0};
+
+            args.filterList = filters;
+            args.filterCount = 1;
+
+            nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+
+            if (result == NFD_OKAY)
+            {
+                std::cout << "Selected: " << outPath << "\n";
+
+                global_data->picture_asset = load_magik_gui_image(outPath);
+
+                NFD_FreePathU8(outPath);
+            }
+            else if (result == NFD_CANCEL)
+            {
+                std::cout << "Cancelled\n";
+            }
+            else
+            {
+                std::cout << "Error: " << NFD_GetError() << "\n";
+            }
+        }
+
         ImGui::EndPopup();
     }
 }
@@ -395,6 +429,13 @@ int main()
     const int initial_width = 1400;
     GLFWwindow* window;
     if(!magik_gui_setup_glfw(window, initial_height, initial_width)) return -1;
+
+    // For loading files from disk
+    if (NFD_Init() != NFD_OKAY)
+    {
+        std::cerr << "Failed to initialize NFD\n";
+        return -1;
+    }
 
     ImFont* gui_font;
     float gui_scale;
