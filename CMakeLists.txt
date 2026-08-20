@@ -9,6 +9,7 @@ find_package(glad CONFIG REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_package(nfd CONFIG REQUIRED)
 
 # 1. Define executable target name
 add_executable(magik_gui src/main.cpp src/stb_image.cpp)
@@ -18,6 +19,7 @@ target_link_libraries(magik_gui PRIVATE
     glad::glad 
     glfw 
     imgui::imgui
+    nfd::nfd
 )
 
 target_include_directories(magik_gui PRIVATE ${Stb_INCLUDE_DIR})
