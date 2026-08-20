@@ -7,6 +7,8 @@
 #include <vector>
 #include <variant>
 #include <format>
+#include <memory>
+#include <nfd.hpp>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
@@ -23,7 +25,7 @@ enum class e_magik_gui_split_order_types : unsigned int
 // ### Defines & Structs ###
 typedef void (*action_caller)(void*);
 
-struct consol_data
+struct console_data
 {
     ImGuiTextBuffer buffer;
     bool auto_scroll = true;
@@ -324,12 +326,96 @@ struct magik_gui_global_data
 
     magik_gui_image picture_asset;
 
-    consol_data c_log;
+    console_data c_log;
 
     layout_split_state layout_state;
 };
 
+struct magik_gui_sliderfloat
+{
+    const char* label;
+    float value;
+    float min = 0.0f;
+    float max = 1.0f;
 
+    void show()
+    {
+        ImGui::SliderFloat(label, &value, min, max);
+    }
+};
+
+struct magik_gui_colorpicker
+{
+    const char* label;
+    ImVec4 color;
+    ImGuiColorEditFlags flags = ImGuiColorEditFlags_PickerHueWheel;
+
+    void show()
+    {
+        ImGui::ColorEdit3(label, &color.x, flags);
+    }
+};
+
+struct magik_gui_checkbox
+{
+    const char* label;
+    bool value;
+    
+    void show()
+    {
+        ImGui::Checkbox(label, &value);
+    }
+};
+
+struct magik_gui_dropdown
+{
+    const char* label;
+    const char* const* elements;
+    int element_count;
+    int selected_element_index = 0;
+    
+    void show()
+    {
+        ImGui::Combo(label, &selected_element_index, elements, element_count);
+    }
+};
+
+struct magik_gui_list
+{
+    const char* label;
+    const char* const* elements;
+    int element_count;
+    int selected_element_index = -1;
+
+    void show()
+    {
+        if (ImGui::BeginListBox(label))
+        {
+            for (int i = 0; i < element_count; i++)
+            {
+                bool selected = selected_element_index == i;
+
+                if (ImGui::Selectable(elements[i], selected))
+                {
+                    selected_element_index = i;
+                }
+
+                if (selected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+
+            ImGui::EndListBox();
+        }
+    }
+};
+
+template<typename... magik_gui_element>
+void maigk_gui_show_interactive_elements(magik_gui_element&... elements)
+{
+    (elements.show(), ...);
+}
 
 // ### Globals ###
 static magik_gui_global_data g_data_instance;
@@ -356,6 +442,16 @@ static magik_gui_image load_magik_gui_image(const char* filename)
     return result;
 }
 
+static void replace_magik_gui_image(magik_gui_image& image, const char* filename)
+{
+    if (image.buffer != 0)
+    {
+        glDeleteTextures(1, &image.buffer);
+    }
+
+    image = load_magik_gui_image(filename);
+}
+
 static void magik_gui_setup_global_data(ImFont* gui_font, float gui_size)
 {
     global_data->gui_font = gui_font;
@@ -363,7 +459,7 @@ static void magik_gui_setup_global_data(ImFont* gui_font, float gui_size)
 
     global_data->picture_asset = load_magik_gui_image("assets/example_render.png");
 
-    global_data->c_log = consol_data();
+    global_data->c_log = console_data();
 }
 
 
@@ -624,10 +720,92 @@ static void magik_gui_render(GLFWwindow* window)
     glfwSwapBuffers(window); 
 }
 
+magik_gui_sliderfloat slider = magik_gui_sliderfloat{
+    "Test_slider",
+    1.0f,
+    0.0f,
+    1.0f
+};
 
+magik_gui_colorpicker colorpicker = magik_gui_colorpicker{
+    "Test_colorpicker",
+    ImVec4{1.0f, 1.0f, 1.0f, 1.0f}
+};
+
+const char* material_types[] = {
+    "Dielectric",
+    "Conductor"
+};
+
+magik_gui_dropdown material_type_dropdown = magik_gui_dropdown{
+    "Material type",
+    material_types,
+    IM_ARRAYSIZE(material_types)
+};
+
+magik_gui_list material_type_list = magik_gui_list{
+    "Material type",
+    material_types,
+    IM_ARRAYSIZE(material_types)
+};
+
+static void context_menu(const char* context_menu_name)
+{
+    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+    {
+        ImGui::OpenPopup(context_menu_name);
+    }
+
+    if (ImGui::BeginPopup(context_menu_name))
+    {
+        ImGui::TextUnformatted(context_menu_name);
+        ImGui::Separator();
+
+        maigk_gui_show_interactive_elements(slider, colorpicker, material_type_dropdown, material_type_list);
+
+        if (ImGui::Button("Load image"))
+        {
+            nfdu8char_t* outPath = nullptr;
+
+            nfdu8filteritem_t filters[] = {
+                { "Images", "png,jpg,jpeg" }
+            };
+
+            nfdopendialogu8args_t args = {0};
+
+            args.filterList = filters;
+            args.filterCount = 1;
+
+            nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
+
+            const char* log_message;
+
+            if (result == NFD_OKAY)
+            {
+                replace_magik_gui_image(global_data->picture_asset, outPath);
+                
+                global_data->c_log.mlog("Loaded %s\n", outPath);
+                
+                NFD_FreePathU8(outPath);
+            }
+            else if (result == NFD_CANCEL)
+            {
+                global_data->c_log.mlog("Image loading cancelled\n");
+            }
+            else
+            {
+                global_data->c_log.mlog("Error loading %s: %s\n", outPath, NFD_GetError());
+            }
+
+            
+        }
+
+        ImGui::EndPopup();
+    }
+}
 
 // ### Panel functions ###
-static void consol_function(void* user_data)
+static void console_function(void* user_data)
 {
     global_data->c_log.mprint();
 }
@@ -657,6 +835,8 @@ static void display_function(void* user_data)
 
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset_x, ImGui::GetCursorPosY() + offset_y));
     ImGui::Image((ImTextureID)(intptr_t)global_data->picture_asset.buffer, image_size);
+
+    context_menu("RenderViewportContextMenu");
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -697,6 +877,12 @@ int main()
     GLFWwindow* window;
     if(!magik_gui_setup_glfw(window, initial_height, initial_width)) return -1;
 
+    if (NFD_Init() != NFD_OKAY)
+    {
+        std::cerr << "Failed to initialize NFD\n";
+        return -1;
+    }
+    
     ImFont* gui_font;
     float gui_scale;
     magik_gui_setup_imgui(window, gui_font, gui_scale);
@@ -712,7 +898,7 @@ int main()
 
     global_data->layout_state.add_panel("Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, nullptr, 0);
     global_data->layout_state.add_panel("Scene graph", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 1);
-    global_data->layout_state.add_panel("Consol log", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, consol_function, nullptr, 2);
+    global_data->layout_state.add_panel("Console log", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 2);
     global_data->layout_state.add_panel("Statistics", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, stats_function, nullptr, 3);
     global_data->layout_state.add_panel("Settings", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 4);
 
