@@ -117,6 +117,7 @@ struct layout_split_state
     std::unique_ptr<single_node> root = std::make_unique<single_node>();
     std::vector<single_node*> splitters;
     std::vector<panel_info> panels;
+    std::vector<std::unique_ptr<single_node>> states;
 
     single_node* find_node(single_node* node, const unsigned int search_box_id)
     {
@@ -306,6 +307,56 @@ struct layout_split_state
         counter_move_child_anchors(target_node->child_b.get(), target_node->type, old_rel_anchor, 1.0f - old_rel_anchor, actual_new_anchor, 1.0f - actual_new_anchor);
     }
 
+    // void reorder
+        /*
+        The opposite of a splitter is a border. I.e regions where nodes are right next to each other in the
+        GUI but dont share the same parent. 
+        The idea of this function is that we should be able to highlight borders and give the option to 
+        reorder the nodes. I.e a border becomes a splitter. 
+        */
+
+    void copy_graph(single_node* reference_node, single_node* target_node)
+    {
+        if(!reference_node || !target_node) return;
+
+        target_node->type = reference_node->type;
+        target_node->rel_anchor = reference_node->rel_anchor;
+        target_node->box_id = reference_node->box_id;
+
+        if(reference_node->child_a)
+        {
+            target_node->child_a = std::make_unique<single_node>();
+            copy_graph(reference_node->child_a.get(), target_node->child_a.get());
+        }
+
+        if (reference_node->child_b)
+        {
+            target_node->child_b = std::make_unique<single_node>();
+            copy_graph(reference_node->child_b.get(), target_node->child_b.get());
+        }
+    }
+
+    void save_current_state()
+    {
+        std::unique_ptr<single_node> state_root = std::make_unique<single_node>();
+        copy_graph(root.get(), state_root.get());
+        states.push_back(std::move(state_root));
+    }
+
+    void set_to_state(unsigned int state_id)
+    {
+        if(states.size() == 0) return;
+
+        root.reset();
+
+        std::unique_ptr<single_node> state_cpy = std::make_unique<single_node>();
+        copy_graph(states[state_id].get(), state_cpy.get());
+        root = std::move(state_cpy);
+
+        splitters.clear();
+        collect_splitters(root.get(), splitters);
+    }
+
     void add_panel(const char* title, ImGuiWindowFlags flags, action_caller user_function, void* user_data, unsigned int id)
     {
         panel_info inst;
@@ -412,7 +463,7 @@ struct magik_gui_list
 };
 
 template<typename... magik_gui_element>
-void maigk_gui_show_interactive_elements(magik_gui_element&... elements)
+void magik_gui_show_interactive_elements(magik_gui_element&... elements)
 {
     (elements.show(), ...);
 }
@@ -457,7 +508,7 @@ static void magik_gui_setup_global_data(ImFont* gui_font, float gui_size)
     global_data->gui_font = gui_font;
     global_data->gui_size = gui_size;
 
-    global_data->picture_asset = load_magik_gui_image("assets/example_render.png");
+    global_data->picture_asset; // = load_magik_gui_image("assets/example_render.png");
 
     global_data->c_log = console_data();
 }
@@ -605,6 +656,11 @@ static void magik_gui_titlebar(GLFWwindow* window)
 		    {
 			    glfwSetWindowShouldClose(window, GLFW_TRUE);
 		    }
+
+            if(ImGui::MenuItem("Reset layout"))
+            {
+                global_data->layout_state.set_to_state(0);
+            }
         
 		    ImGui::EndMenu();
 	    }
@@ -761,7 +817,7 @@ static void context_menu(const char* context_menu_name)
         ImGui::TextUnformatted(context_menu_name);
         ImGui::Separator();
 
-        maigk_gui_show_interactive_elements(slider, colorpicker, material_type_dropdown, material_type_list);
+        magik_gui_show_interactive_elements(slider, colorpicker, material_type_dropdown, material_type_list);
 
         if (ImGui::Button("Load image"))
         {
@@ -895,6 +951,7 @@ int main()
     global_data->layout_state.split_node(e_magik_gui_split_order_types::y_axis, 0.75f, 0, 2);
     global_data->layout_state.split_node(e_magik_gui_split_order_types::y_axis, 0.75f, 1, 3);
     global_data->layout_state.split_node(e_magik_gui_split_order_types::y_axis, 0.2f, 1, 4);
+    global_data->layout_state.save_current_state();
 
     global_data->layout_state.add_panel("Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, nullptr, 0);
     global_data->layout_state.add_panel("Scene graph", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 1);
