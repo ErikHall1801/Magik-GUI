@@ -7,6 +7,7 @@
 #include <vector>
 #include <variant>
 #include <format>
+#include <cmath>
 #include <memory>
 #include <nfd.hpp>
 #include "imgui.h"
