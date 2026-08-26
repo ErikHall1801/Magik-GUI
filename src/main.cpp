@@ -12,6 +12,7 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "magik.h"
 
 // ### Enum classes ###
 enum class e_magik_gui_split_order_types : unsigned int
@@ -1213,6 +1214,11 @@ int main()
     graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Test", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 5});
 
     graph_manager.add_state(std::move(graph_manager.copy_state(graph_manager.active_state_id)));
+
+    uint32_t MAJOR = 0, MINOR = 0, REVISION = 0;
+    const char* AS_CHAR;
+    magik_get_version(&MAJOR, &MINOR, &REVISION, &AS_CHAR);
+    global_consol_data->mlog(AS_CHAR);
 
 	while (!glfwWindowShouldClose(window))
 	{
