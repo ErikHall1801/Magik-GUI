@@ -8,6 +8,7 @@
 #include <variant>
 #include <format>
 #include <memory>
+#include <chrono>
 #include <nfd.hpp>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -801,6 +802,7 @@ static bool magik_gui_setup_glfw(GLFWwindow* &window, const int i_height, const 
     }
 
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(0);
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
@@ -1124,6 +1126,36 @@ static void context_menu(const char* context_menu_name)
     }
 }
 
+static magik_gui_image float_to_image(float* ptr, uint32_t x_resolution, uint32_t y_resolution, int channels)
+{
+    magik_gui_image result;
+    result.channels = channels;
+    result.width = x_resolution;
+    result.height = y_resolution;
+    size_t size_of_fb = channels*sizeof(float)*static_cast<size_t>(x_resolution*y_resolution);
+    unsigned char* pixels = (unsigned char*)malloc(size_of_fb);
+
+    for(int i = 0; i < x_resolution*y_resolution*channels; i++)
+    {
+        pixels[i] = static_cast<unsigned char>(ptr[i] * 255.0f);
+    }
+
+    glGenTextures(1, &result.buffer);
+    glBindTexture(GL_TEXTURE_2D, result.buffer);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, result.width, result.height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+
+    free(pixels);
+
+    return result;
+}
+
+
 // ### Panel functions ###
 static void console_function(void* user_data)
 {
@@ -1138,14 +1170,18 @@ static void display_function(void* user_data)
 
     ImVec2 available_display_space = ImGui::GetContentRegionAvail();
 
-    float scale = std::min(
+    check_magik_errors(magik_aov_resize((magik_render_manager_t)user_data, available_display_space.x, available_display_space.y));
+
+    float scale = std::min
+    (
         available_display_space.x / global_data->picture_asset.width,
         available_display_space.y / global_data->picture_asset.height
     );
 
     scale = std::min(scale, 1.0f);
 
-    ImVec2 image_size(
+    ImVec2 image_size
+    (
         global_data->picture_asset.width * scale,
         global_data->picture_asset.height * scale
     );
@@ -1164,9 +1200,7 @@ static void display_function(void* user_data)
 
 static void stats_function(void* user_data)
 {
-    // Print out the leaf node sizes 
     ImGuiTextBuffer buffer;
-    // append_binary_tree(global_data->layout_state.root.get(), buffer);
     ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
     ImGui::TextUnformatted(buffer.begin(), buffer.end());
 
@@ -1197,6 +1231,13 @@ int main()
 
     magik_gui_setup_global_data(gui_font, gui_scale);
 
+    magik_render_manager_t manager = magik_create_render_manager(0);
+    check_magik_errors(magik_get_last_error());
+    magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_OPENGL_INTEROP);
+    check_magik_errors(magik_get_last_error());
+    magik_aov_container_config_opengl_interop_t host_framebuffer;
+    // magik_aov_container_config_host_t host_framebuffer;
+
     bsp_graph_manager graph_manager;
     graph_manager.add_state();
     graph_manager.set_active_state(0);
@@ -1206,7 +1247,7 @@ int main()
     graph_manager.split_node(graph_manager.active_state_id, 1, e_magik_gui_split_order_types::y_axis, 0.2f, 4);
     graph_manager.split_node(graph_manager.active_state_id, 1, e_magik_gui_split_order_types::y_axis, 0.2f, 5);
 
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, nullptr, 0});
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, (void*)manager, 0});
     graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Scene graph", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 1});
     graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Console", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 2});
     graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Statistics", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, stats_function, nullptr, 3});
@@ -1220,10 +1261,44 @@ int main()
     magik_get_version(&MAJOR, &MINOR, &REVISION, &AS_CHAR);
     global_consol_data->mlog(AS_CHAR);
 
+    auto fps_timer_start = std::chrono::steady_clock::now();
+    int cycles = 0;
+
+    magik_get_system_Info();
+
 	while (!glfwWindowShouldClose(window))
 	{
         magik_gui_new_frame(window);
 
+        if(magik_aov_fetch(manager, framebuffer))
+        {
+            check_magik_errors(magik_get_last_error());
+            check_magik_errors(magik_aov_config_opengl_interop_extract(&host_framebuffer, framebuffer));
+            // check_magik_errors(magik_aov_config_host_extract(&host_framebuffer, framebuffer));
+
+            /*magik_gui_image kernel_image;
+            kernel_image.channels = 3;
+            kernel_image.width = host_framebuffer.x_resolution;
+            kernel_image.height = host_framebuffer.y_resolution;
+
+            glGenTextures(1, &kernel_image.buffer);
+            glBindTexture(GL_TEXTURE_2D, kernel_image.buffer);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, host_framebuffer.gl_buffer_id);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, kernel_image.width, kernel_image.height, 0, GL_RGB, GL_FLOAT, nullptr);
+
+            glDeleteTextures(1, &global_data->picture_asset.buffer);
+            global_data->picture_asset = kernel_image;*/
+
+        }
+
+        // magik_gui_image kernel_image = float_to_image(host_framebuffer.h_albedo, host_framebuffer.x_resolution, host_framebuffer.y_resolution, 3);
+        
         magik_gui_titlebar(window, graph_manager);
 
         magik_gui_draw_panels(graph_manager);
@@ -1231,7 +1306,26 @@ int main()
         magik_gui_panel_sliders(graph_manager);
 
         magik_gui_render(window);
+
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed_seconds = std::chrono::duration_cast<std::chrono::microseconds>(now - fps_timer_start).count();
+        cycles++;
+
+        if(elapsed_seconds > 1e6)
+        {
+            double dcc_seconds_passed = (double)elapsed_seconds / 1000000.0;
+            double dcc_fps = cycles / dcc_seconds_passed;
+            printf("DCC FPS; %i \n", (int)(dcc_fps));
+            double ft = 0.0; 
+            check_magik_errors(magik_fetch_frame_time(&ft));
+            printf("API FPS; %i \n", (int)(1000000.0 / ft));
+            cycles = 0;
+            fps_timer_start = std::chrono::steady_clock::now();
+        }
 	}
+
+    check_magik_errors(magik_destroy_render_manager(manager));
+    check_magik_errors(magik_aov_destroy(framebuffer));
 
 	return 0;
 }
