@@ -1126,35 +1126,24 @@ static void context_menu(const char* context_menu_name)
     }
 }
 
-static magik_gui_image float_to_image(float* ptr, uint32_t x_resolution, uint32_t y_resolution, int channels)
+static void update_display_buffer(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, float* h_dcc_ptr, magik_gui_image* display_image)
 {
-    magik_gui_image result;
-    result.channels = channels;
-    result.width = x_resolution;
-    result.height = y_resolution;
-    size_t size_of_fb = channels*sizeof(float)*static_cast<size_t>(x_resolution*y_resolution);
-    unsigned char* pixels = (unsigned char*)malloc(size_of_fb);
-
-    for(int i = 0; i < x_resolution*y_resolution*channels; i++)
+    if((dcc_x_resolution != display_image->height) || (dcc_y_resolution != display_image->width))
     {
-        pixels[i] = static_cast<unsigned char>(ptr[i] * 255.0f);
+        glDeleteTextures(1, &display_image->buffer);
+        display_image->height = dcc_y_resolution;
+        display_image->width = dcc_x_resolution;
+        glGenTextures(1, &display_image->buffer);
+        glBindTexture(GL_TEXTURE_2D, display_image->buffer);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    glGenTextures(1, &result.buffer);
-    glBindTexture(GL_TEXTURE_2D, result.buffer);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, result.width, result.height, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
-
-    free(pixels);
-
-    return result;
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, display_image->width, display_image->height, 0, GL_RGB, GL_FLOAT, h_dcc_ptr);
 }
-
 
 // ### Panel functions ###
 static void console_function(void* user_data)
@@ -1233,10 +1222,10 @@ int main()
 
     magik_render_manager_t manager = magik_create_render_manager(0);
     check_magik_errors(magik_get_last_error());
-    magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_OPENGL_INTEROP);
+    magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_HOST);
     check_magik_errors(magik_get_last_error());
-    magik_aov_container_config_opengl_interop_t host_framebuffer;
-    // magik_aov_container_config_host_t host_framebuffer;
+    // magik_aov_container_config_opengl_interop_t host_framebuffer;
+    magik_aov_container_config_host_t host_framebuffer;
 
     bsp_graph_manager graph_manager;
     graph_manager.add_state();
@@ -1273,32 +1262,13 @@ int main()
         if(magik_aov_fetch(manager, framebuffer))
         {
             check_magik_errors(magik_get_last_error());
-            check_magik_errors(magik_aov_config_opengl_interop_extract(&host_framebuffer, framebuffer));
-            // check_magik_errors(magik_aov_config_host_extract(&host_framebuffer, framebuffer));
-
-            /*magik_gui_image kernel_image;
-            kernel_image.channels = 3;
-            kernel_image.width = host_framebuffer.x_resolution;
-            kernel_image.height = host_framebuffer.y_resolution;
-
-            glGenTextures(1, &kernel_image.buffer);
-            glBindTexture(GL_TEXTURE_2D, kernel_image.buffer);
-
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-            glBindBuffer(GL_PIXEL_UNPACK_BUFFER, host_framebuffer.gl_buffer_id);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, kernel_image.width, kernel_image.height, 0, GL_RGB, GL_FLOAT, nullptr);
-
-            glDeleteTextures(1, &global_data->picture_asset.buffer);
-            global_data->picture_asset = kernel_image;*/
+            // check_magik_errors(magik_aov_config_opengl_interop_extract(&host_framebuffer, framebuffer));
+            check_magik_errors(magik_aov_config_host_extract(&host_framebuffer, framebuffer));
 
         }
 
-        // magik_gui_image kernel_image = float_to_image(host_framebuffer.h_albedo, host_framebuffer.x_resolution, host_framebuffer.y_resolution, 3);
-        
+        update_display_buffer(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.h_albedo, &global_data->picture_asset);
+
         magik_gui_titlebar(window, graph_manager);
 
         magik_gui_draw_panels(graph_manager);
