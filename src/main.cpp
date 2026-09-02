@@ -1126,7 +1126,7 @@ static void context_menu(const char* context_menu_name)
     }
 }
 
-static void update_display_buffer(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, float* h_dcc_ptr, magik_gui_image* display_image)
+static void update_display_buffer_config_host(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, float* h_dcc_ptr, magik_gui_image* display_image)
 {
     if((dcc_x_resolution != display_image->height) || (dcc_y_resolution != display_image->width))
     {
@@ -1143,6 +1143,42 @@ static void update_display_buffer(uint32_t dcc_x_resolution, uint32_t dcc_y_reso
     }
 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, display_image->width, display_image->height, 0, GL_RGB, GL_FLOAT, h_dcc_ptr);
+}
+
+static void update_display_buffer_config_opengl_interop(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, uint32_t gl_buffer_id, magik_gui_image* display_image)
+{
+    bool needs_realloc = (display_image->width != dcc_x_resolution) || 
+                         (display_image->height != dcc_y_resolution) || 
+                         (display_image->buffer == 0);
+
+    if (needs_realloc)
+    {
+        if (display_image->buffer != 0)
+        {
+            glDeleteTextures(1, &display_image->buffer);
+        }
+
+        display_image->width = dcc_x_resolution;
+        display_image->height = dcc_y_resolution;
+
+        glGenTextures(1, &display_image->buffer);
+        glBindTexture(GL_TEXTURE_2D, display_image->buffer);
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, display_image->width, display_image->height, 0, GL_RGB, GL_FLOAT, nullptr);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, display_image->buffer);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, gl_buffer_id);
+
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, display_image->width, display_image->height, GL_RGB, GL_FLOAT, nullptr);
+
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 // ### Panel functions ###
@@ -1220,12 +1256,14 @@ int main()
 
     magik_gui_setup_global_data(gui_font, gui_scale);
 
+    check_magik_errors(magik_gl_init((GLADloadproc)glfwGetProcAddress));
+
     magik_render_manager_t manager = magik_create_render_manager(0);
     check_magik_errors(magik_get_last_error());
-    magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_HOST);
+    magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_OPENGL_INTEROP);
     check_magik_errors(magik_get_last_error());
-    // magik_aov_container_config_opengl_interop_t host_framebuffer;
-    magik_aov_container_config_host_t host_framebuffer;
+    magik_aov_container_config_opengl_interop_t host_framebuffer;
+    // magik_aov_container_config_host_t host_framebuffer;
 
     bsp_graph_manager graph_manager;
     graph_manager.add_state();
@@ -1262,12 +1300,13 @@ int main()
         if(magik_aov_fetch(manager, framebuffer))
         {
             check_magik_errors(magik_get_last_error());
-            // check_magik_errors(magik_aov_config_opengl_interop_extract(&host_framebuffer, framebuffer));
-            check_magik_errors(magik_aov_config_host_extract(&host_framebuffer, framebuffer));
-
+            check_magik_errors(magik_aov_config_opengl_interop_extract(&host_framebuffer, framebuffer));
+            // check_magik_errors(magik_aov_config_host_extract(&host_framebuffer, framebuffer));
         }
 
-        update_display_buffer(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.h_albedo, &global_data->picture_asset);
+        // update_display_buffer_config_host(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.h_albedo, &global_data->picture_asset);
+
+        update_display_buffer_config_opengl_interop(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.gl_buffer_id, &global_data->picture_asset);
 
         magik_gui_titlebar(window, graph_manager);
 
@@ -1285,10 +1324,10 @@ int main()
         {
             double dcc_seconds_passed = (double)elapsed_seconds / 1000000.0;
             double dcc_fps = cycles / dcc_seconds_passed;
-            printf("DCC FPS; %i \n", (int)(dcc_fps));
+            // printf("DCC FPS; %i \n", (int)(dcc_fps));
             double ft = 0.0; 
             check_magik_errors(magik_fetch_frame_time(&ft));
-            printf("API FPS; %i \n", (int)(1000000.0 / ft));
+            // printf("API FPS; %i \n", (int)(1000000.0 / ft));
             cycles = 0;
             fps_timer_start = std::chrono::steady_clock::now();
         }
