@@ -1071,7 +1071,7 @@ magik_gui_list material_type_list = magik_gui_list{
     IM_ARRAYSIZE(material_types)
 };
 
-static void context_menu(const char* context_menu_name)
+static void context_menu(const char* context_menu_name, void* user_data)
 {
     if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
     {
@@ -1084,6 +1084,12 @@ static void context_menu(const char* context_menu_name)
         ImGui::Separator();
 
         magik_gui_show_interactive_elements(slider, colorpicker, material_type_dropdown, material_type_list);
+        
+        magik_command_set_julia_set_color_t cmd;
+        cmd.c0 = colorpicker.color.x;
+        cmd.c1 = colorpicker.color.y;
+        cmd.c2 = colorpicker.color.z;
+        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd));
 
         if (ImGui::Button("Load image"))
         {
@@ -1195,7 +1201,10 @@ static void display_function(void* user_data)
 
     ImVec2 available_display_space = ImGui::GetContentRegionAvail();
 
-    check_magik_errors(magik_aov_resize((magik_render_manager_t)user_data, available_display_space.x, available_display_space.y));
+    magik_command_set_resolution_t c_set_res;
+    c_set_res.x_resolution = available_display_space.x;
+    c_set_res.y_resolution = available_display_space.y;
+    check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &c_set_res));
 
     float scale = std::min
     (
@@ -1217,7 +1226,7 @@ static void display_function(void* user_data)
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset_x, ImGui::GetCursorPosY() + offset_y));
     ImGui::Image((ImTextureID)(intptr_t)global_data->picture_asset.buffer, image_size);
 
-    context_menu("RenderViewportContextMenu");
+    context_menu("RenderViewportContextMenu", user_data);
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -1263,6 +1272,9 @@ int main()
     magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_OPENGL_INTEROP);
     check_magik_errors(magik_get_last_error());
     magik_aov_container_config_opengl_interop_t host_framebuffer;
+
+    check_magik_errors(magik_cqs_configure(manager, 4096));
+
     // magik_aov_container_config_host_t host_framebuffer;
 
     bsp_graph_manager graph_manager;
@@ -1300,7 +1312,7 @@ int main()
         if(magik_aov_fetch(manager, framebuffer))
         {
             check_magik_errors(magik_get_last_error());
-            check_magik_errors(magik_aov_config_opengl_interop_extract(&host_framebuffer, framebuffer));
+            check_magik_errors(magik_aov_config_opengl_interop_extract(manager, &host_framebuffer, framebuffer));
             // check_magik_errors(magik_aov_config_host_extract(&host_framebuffer, framebuffer));
         }
 
@@ -1331,6 +1343,9 @@ int main()
             cycles = 0;
             fps_timer_start = std::chrono::steady_clock::now();
         }
+
+        magik_cqs_dispatch_command_buffer(manager);
+        check_magik_errors(magik_get_last_error());
 	}
 
     check_magik_errors(magik_destroy_render_manager(manager));
