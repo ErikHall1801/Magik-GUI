@@ -7,6 +7,7 @@
 #include <vector>
 #include <variant>
 #include <format>
+#include <cmath>
 #include <memory>
 #include <chrono>
 #include <nfd.hpp>
