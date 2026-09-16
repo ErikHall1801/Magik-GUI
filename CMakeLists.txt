@@ -26,7 +26,8 @@ endif()
 
 # 3. Link against Magik
 target_include_directories(magik_gui PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/../Magik/include/magik"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../Magik/include/magik",
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 target_link_libraries(magik_gui PRIVATE
