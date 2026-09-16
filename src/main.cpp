@@ -7,6 +7,7 @@
 #include <vector>
 #include <variant>
 #include <format>
+#include <cmath>
 #include <memory>
 #include <chrono>
 #include <nfd.hpp>
@@ -1247,6 +1248,7 @@ static void display_function(void* user_data)
 static void stats_function(void* user_data)
 {
     ImGuiTextBuffer buffer;
+    // append_binary_tree(global_data->layout_state.root.get(), buffer);
     ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
     ImGui::TextUnformatted(buffer.begin(), buffer.end());
 
@@ -1277,22 +1279,6 @@ int main()
 
     magik_gui_setup_global_data(gui_font, gui_scale);
 
-    check_magik_errors(magik_gl_init((GLADloadproc)glfwGetProcAddress));
-
-    magik_manager_descriptor_t descriptor;
-    descriptor.display_type = MAGIK_DISPLAY_SWAPCHAIN;
-    descriptor.user_device_id = 0;
-    descriptor.user_stream = nullptr;
-    descriptor.cqs_n_reserved_chunk = 4096;
-    descriptor.cqs_drop_overflow = false;
-
-    magik_render_manager_t manager = magik_create_render_manager(descriptor);
-    check_magik_errors(magik_get_last_error());
-    magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_OPENGL_INTEROP);
-    check_magik_errors(magik_get_last_error());
-    magik_aov_container_config_opengl_interop_t host_framebuffer;
-    // magik_aov_container_config_host_t host_framebuffer;
-
     bsp_graph_manager graph_manager;
     graph_manager.add_state();
     graph_manager.set_active_state(0);
@@ -1302,7 +1288,7 @@ int main()
     graph_manager.split_node(graph_manager.active_state_id, 1, e_magik_gui_split_order_types::y_axis, 0.2f, 4);
     graph_manager.split_node(graph_manager.active_state_id, 1, e_magik_gui_split_order_types::y_axis, 0.2f, 5);
 
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, (void*)manager, 0});
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, nullptr, 0});
     graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Scene graph", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 1});
     graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Console", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 2});
     graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Statistics", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, stats_function, nullptr, 3});
@@ -1316,37 +1302,9 @@ int main()
     magik_get_version(&MAJOR, &MINOR, &REVISION, &AS_CHAR);
     global_consol_data->mlog(AS_CHAR);
 
-    auto fps_timer_start = std::chrono::steady_clock::now();
-    int cycles = 0;
-
-    magik_command_printf_t cmd_printf;
-    cmd_printf.length_of_text = 11;
-    std::strncpy(cmd_printf.text, "Hello World", sizeof(cmd_printf.text));
-    cmd_printf.text[sizeof(cmd_printf.text) - 1] = '\0';
-    check_magik_errors(magik_cqs_push_command(manager, &cmd_printf));
-
-    magik_command_add_aov_t cmd_add_aov;
-    cmd_add_aov.channels = 3;
-    cmd_add_aov.length_of_name = 4;
-    std::strncpy(cmd_add_aov.name, "test", sizeof(cmd_add_aov.name));
-    check_magik_errors(magik_cqs_push_command(manager, &cmd_add_aov));
-
-    magik_get_system_Info();
-
 	while (!glfwWindowShouldClose(window))
 	{
         magik_gui_new_frame(window);
-
-        if(magik_aov_fetch(manager, framebuffer))
-        {
-            check_magik_errors(magik_get_last_error());
-            check_magik_errors(magik_aov_config_opengl_interop_extract(manager, &host_framebuffer, framebuffer, "test"));
-            // check_magik_errors(magik_aov_config_host_extract(manager, &host_framebuffer, framebuffer, "test"));
-        }
-
-        // update_display_buffer_config_host(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.h_data, &global_data->picture_asset);
-
-        update_display_buffer_config_opengl_interop(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.gl_buffer_id, &global_data->picture_asset);
 
         magik_gui_titlebar(window, graph_manager);
 
