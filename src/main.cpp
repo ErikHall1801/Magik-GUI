@@ -1,5 +1,5 @@
 // GLAD must come first ! Or else we get conflicts 
-#include <glad/glad.h>
+#include <glad/glad.h> 
 #include <stdio.h>
 #include <GLFW/glfw3.h>
 #include <stb_image.h>
@@ -9,6 +9,7 @@
 #include <format>
 #include <cmath>
 #include <memory>
+#include <chrono>
 #include <nfd.hpp>
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -802,6 +803,7 @@ static bool magik_gui_setup_glfw(GLFWwindow* &window, const int i_height, const 
     }
 
     glfwMakeContextCurrent(window);
+    glfwSwapInterval(0);
 
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
 	{
@@ -1041,10 +1043,17 @@ static void magik_gui_render(GLFWwindow* window)
     glfwSwapBuffers(window); 
 }
 
-magik_gui_sliderfloat slider = magik_gui_sliderfloat{
-    "Test_slider",
-    1.0f,
-    0.0f,
+magik_gui_sliderfloat slider0 = magik_gui_sliderfloat{
+    "Real",
+    0.5f,
+    -1.0f,
+    1.0f
+};
+
+magik_gui_sliderfloat slider1 = magik_gui_sliderfloat{
+    "Imag",
+    -0.7f,
+    -1.0f,
     1.0f
 };
 
@@ -1070,7 +1079,7 @@ magik_gui_list material_type_list = magik_gui_list{
     IM_ARRAYSIZE(material_types)
 };
 
-static void context_menu(const char* context_menu_name)
+static void context_menu(const char* context_menu_name, void* user_data)
 {
     if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
     {
@@ -1082,7 +1091,18 @@ static void context_menu(const char* context_menu_name)
         ImGui::TextUnformatted(context_menu_name);
         ImGui::Separator();
 
-        magik_gui_show_interactive_elements(slider, colorpicker, material_type_dropdown, material_type_list);
+        magik_gui_show_interactive_elements(slider0, slider1, colorpicker, material_type_dropdown, material_type_list);
+        
+        magik_command_set_julia_set_color_t cmd_color;
+        cmd_color.c0 = colorpicker.color.x;
+        cmd_color.c1 = colorpicker.color.y;
+        cmd_color.c2 = colorpicker.color.z;
+        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_color));
+
+        magik_command_set_julia_set_offset_t cmd_offset;
+        cmd_offset.real = slider0.value;
+        cmd_offset.imaginary = slider1.value;
+        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_offset));
 
         if (ImGui::Button("Load image"))
         {
@@ -1125,6 +1145,61 @@ static void context_menu(const char* context_menu_name)
     }
 }
 
+static void update_display_buffer_config_host(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, float* h_dcc_ptr, magik_gui_image* display_image)
+{
+    if((dcc_x_resolution != display_image->height) || (dcc_y_resolution != display_image->width))
+    {
+        glDeleteTextures(1, &display_image->buffer);
+        display_image->height = dcc_y_resolution;
+        display_image->width = dcc_x_resolution;
+        glGenTextures(1, &display_image->buffer);
+        glBindTexture(GL_TEXTURE_2D, display_image->buffer);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, display_image->width, display_image->height, 0, GL_RGB, GL_FLOAT, h_dcc_ptr);
+}
+
+static void update_display_buffer_config_opengl_interop(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, uint32_t gl_buffer_id, magik_gui_image* display_image)
+{
+    bool needs_realloc = (display_image->width != dcc_x_resolution) || 
+                         (display_image->height != dcc_y_resolution) || 
+                         (display_image->buffer == 0);
+
+    if (needs_realloc)
+    {
+        if (display_image->buffer != 0)
+        {
+            glDeleteTextures(1, &display_image->buffer);
+        }
+
+        display_image->width = dcc_x_resolution;
+        display_image->height = dcc_y_resolution;
+
+        glGenTextures(1, &display_image->buffer);
+        glBindTexture(GL_TEXTURE_2D, display_image->buffer);
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, display_image->width, display_image->height, 0, GL_RGB, GL_FLOAT, nullptr);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, display_image->buffer);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, gl_buffer_id);
+
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, display_image->width, display_image->height, GL_RGB, GL_FLOAT, nullptr);
+
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 // ### Panel functions ###
 static void console_function(void* user_data)
 {
@@ -1139,14 +1214,21 @@ static void display_function(void* user_data)
 
     ImVec2 available_display_space = ImGui::GetContentRegionAvail();
 
-    float scale = std::min(
+    magik_command_set_resolution_t c_set_res;
+    c_set_res.x_resolution = std::fabs(available_display_space.x);
+    c_set_res.y_resolution = std::fabs(available_display_space.y);
+    check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &c_set_res));
+
+    float scale = std::min
+    (
         available_display_space.x / global_data->picture_asset.width,
         available_display_space.y / global_data->picture_asset.height
     );
 
     scale = std::min(scale, 1.0f);
 
-    ImVec2 image_size(
+    ImVec2 image_size
+    (
         global_data->picture_asset.width * scale,
         global_data->picture_asset.height * scale
     );
@@ -1157,7 +1239,7 @@ static void display_function(void* user_data)
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset_x, ImGui::GetCursorPosY() + offset_y));
     ImGui::Image((ImTextureID)(intptr_t)global_data->picture_asset.buffer, image_size);
 
-    context_menu("RenderViewportContextMenu");
+    context_menu("RenderViewportContextMenu", user_data);
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -1165,7 +1247,6 @@ static void display_function(void* user_data)
 
 static void stats_function(void* user_data)
 {
-    // Print out the leaf node sizes 
     ImGuiTextBuffer buffer;
     // append_binary_tree(global_data->layout_state.root.get(), buffer);
     ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
@@ -1232,7 +1313,29 @@ int main()
         magik_gui_panel_sliders(graph_manager);
 
         magik_gui_render(window);
+
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed_seconds = std::chrono::duration_cast<std::chrono::microseconds>(now - fps_timer_start).count();
+        cycles++;
+
+        if(elapsed_seconds > 1e6)
+        {
+            double dcc_seconds_passed = (double)elapsed_seconds / 1000000.0;
+            double dcc_fps = cycles / dcc_seconds_passed;
+            // printf("DCC FPS; %i \n", (int)(dcc_fps));
+            double ft = 0.0; 
+            check_magik_errors(magik_fetch_frame_time(&ft));
+            // printf("API FPS; %i \n", (int)(1000000.0 / ft));
+            cycles = 0;
+            fps_timer_start = std::chrono::steady_clock::now();
+        }
+
+        magik_cqs_dispatch_command_buffer(manager);
+        check_magik_errors(magik_get_last_error());
 	}
+
+    check_magik_errors(magik_destroy_render_manager(manager));
+    check_magik_errors(magik_aov_destroy(framebuffer));
 
 	return 0;
 }
