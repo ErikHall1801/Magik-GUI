@@ -1,5 +1,5 @@
 // GLAD must come first ! Or else we get conflicts 
-#include <glad/glad.h>
+#include <glad/glad.h> 
 #include <stdio.h>
 #include <GLFW/glfw3.h>
 #include <stb_image.h>
@@ -1160,7 +1160,7 @@ static void update_display_buffer_config_host(uint32_t dcc_x_resolution, uint32_
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, display_image->width, display_image->height, 0, GL_RGB, GL_FLOAT, h_dcc_ptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, display_image->width, display_image->height, 0, GL_RGB, GL_FLOAT, h_dcc_ptr);
 }
 
 static void update_display_buffer_config_opengl_interop(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, uint32_t gl_buffer_id, magik_gui_image* display_image)
@@ -1279,12 +1279,18 @@ int main()
 
     check_magik_errors(magik_gl_init((GLADloadproc)glfwGetProcAddress));
 
-    magik_render_manager_t manager = magik_create_render_manager(0, 4096, false);
+    magik_manager_descriptor_t descriptor;
+    descriptor.display_type = MAGIK_DISPLAY_SWAPCHAIN;
+    descriptor.user_device_id = 0;
+    descriptor.user_stream = nullptr;
+    descriptor.cqs_n_reserved_chunk = 4096;
+    descriptor.cqs_drop_overflow = false;
+
+    magik_render_manager_t manager = magik_create_render_manager(descriptor);
     check_magik_errors(magik_get_last_error());
     magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_OPENGL_INTEROP);
     check_magik_errors(magik_get_last_error());
     magik_aov_container_config_opengl_interop_t host_framebuffer;
-
     // magik_aov_container_config_host_t host_framebuffer;
 
     bsp_graph_manager graph_manager;
@@ -1319,6 +1325,12 @@ int main()
     cmd_printf.text[sizeof(cmd_printf.text) - 1] = '\0';
     check_magik_errors(magik_cqs_push_command(manager, &cmd_printf));
 
+    magik_command_add_aov_t cmd_add_aov;
+    cmd_add_aov.channels = 3;
+    cmd_add_aov.length_of_name = 4;
+    std::strncpy(cmd_add_aov.name, "test", sizeof(cmd_add_aov.name));
+    check_magik_errors(magik_cqs_push_command(manager, &cmd_add_aov));
+
     magik_get_system_Info();
 
 	while (!glfwWindowShouldClose(window))
@@ -1328,11 +1340,11 @@ int main()
         if(magik_aov_fetch(manager, framebuffer))
         {
             check_magik_errors(magik_get_last_error());
-            check_magik_errors(magik_aov_config_opengl_interop_extract(manager, &host_framebuffer, framebuffer));
-            // check_magik_errors(magik_aov_config_host_extract(&host_framebuffer, framebuffer));
+            check_magik_errors(magik_aov_config_opengl_interop_extract(manager, &host_framebuffer, framebuffer, "test"));
+            // check_magik_errors(magik_aov_config_host_extract(manager, &host_framebuffer, framebuffer, "test"));
         }
 
-        // update_display_buffer_config_host(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.h_albedo, &global_data->picture_asset);
+        // update_display_buffer_config_host(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.h_data, &global_data->picture_asset);
 
         update_display_buffer_config_opengl_interop(host_framebuffer.x_resolution, host_framebuffer.y_resolution, host_framebuffer.gl_buffer_id, &global_data->picture_asset);
 
