@@ -1101,25 +1101,25 @@ int main()
 
     magik_gui_context_menu render_context_menu{
         "Test_context_menu",
-        magik_gui_show_context_menu
+        magik_gui_show_context_menu,
+        0.2f
     };
 
     render_context_menu.staging_area->add_colorpicker(
-        ImVec2(10.0f, 10.0f),
-        magik_gui_show_colorpicker,
         "Test_colorpicker",
+        magik_gui_show_colorpicker,
         ImVec4(0.0f, 0.0f, 0.0f, 1.0f)
     );
 
     magik_gui_context_menu stats_context_menu{
         "Test_settings_context_menu",
-        magik_gui_show_context_menu
+        magik_gui_show_context_menu,
+        0.5f
     };
 
     stats_context_menu.staging_area->add_checkbox(
-        ImVec2(10.0f, 10.0f),
-        magik_gui_show_checkbox,
         "Test_checkbox",
+        magik_gui_show_checkbox,
         false
     );
 
@@ -1143,36 +1143,67 @@ int main()
 
     magik_gui_staging_area_manager staging_area_manager;
 
+    std::vector<float> settings_staging_area_heights{500.0f};
+
+    staging_area_manager.add_staging_areas(4, 1, settings_staging_area_heights);
+
+    staging_area_manager.get_staging_area(4, 0)->add_colorpicker(
+        "Test_colorpicker_settings_window",
+        magik_gui_show_colorpicker,
+        ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
+    );
+
+    staging_area_manager.get_staging_area(4, 0)->add_list<const char*>(
+        "Test_settings_list",
+        magik_gui_show_list<const char*>,
+        std::vector<const char*>{"Material1", "Matieral", "Material3", "Material4", "Material6", "Matierla7"},
+        +[](const char* const& element) -> const char* {
+            return element;
+        },
+        e_magik_gui_list_type::List
+    );
+
+    staging_area_manager.get_staging_area(4, 0)->add_button(
+        "Test_settings_button",
+        magik_gui_show_button,
+        ImVec2(100.0f, 100.0f)
+    );
+
+    staging_area_manager.get_staging_area(4, 0)->add_slider(
+        "Test_settings_slider",
+        magik_gui_show_slider,
+        0,
+        0,
+        1,
+        0.9f
+    );
+
     std::vector<float> staging_area_heights{500.0f, 200.0f, 200.0f};
 
     staging_area_manager.add_staging_areas(3, 3, staging_area_heights);
     
     magik_gui_dropdown_menu& stats_dropdown = staging_area_manager.get_staging_area(3, 1)->add_dropdown_menu(
-        ImVec2(0.0f, 50.0f),
-        magik_gui_show_dropdown_menu,
-        "Test_dropdown_menu"
+        "Test_dropdown_menu",
+        magik_gui_show_dropdown_menu
     );
 
     staging_area_manager.add_staging_areas(1, 3, staging_area_heights);
 
     staging_area_manager.get_staging_area(1, 0)->add_checkbox(
-        ImVec2(0.0f, 50.0f),
-        magik_gui_show_colorpicker,
-        "Test_colorpicker_render_window",
+        "Test_checkbox_render_window",
+        magik_gui_show_checkbox,
         false
     );
 
     staging_area_manager.get_staging_area(1, 2)->add_colorpicker(
-        ImVec2(0.0f, 50.0f),
-        magik_gui_show_colorpicker,
         "Test_colorpicker_scene_graph",
+        magik_gui_show_colorpicker,
         ImVec4(1.0f, 1.0f, 1.0f, 1.0f)
     );
 
     stats_dropdown.staging_area->add_button(
-        ImVec2(0.0f, 0.0f),
-        magik_gui_show_button,
         "Test_button_in_dropdown",
+        magik_gui_show_button,
         ImVec2(100.0f, 100.0f)
     );
 
@@ -1190,25 +1221,22 @@ int main()
     std::vector<material> material_list{gold, glass};
 
     stats_dropdown.staging_area->add_list<material>(
-        ImVec2(0.0f, 100.0f),
-        magik_gui_show_list<material>,
         "Test_material_list",
+        magik_gui_show_list<material>,
         material_list,
         material::get_name,
         e_magik_gui_list_type::Dropdown
     );
 
     staging_area_manager.get_staging_area(3, 0)->add_colorpicker(
-        ImVec2(0.0f, 50.0f),
-        magik_gui_show_colorpicker,
         "Test_colorpicker",
+        magik_gui_show_colorpicker,
         ImVec4(0.0f, 0.0f, 0.0f, 1.0f)
     );
 
     staging_area_manager.get_staging_area(3, 2)->add_slider(
-        ImVec2(0.0f, 50.0f),
-        magik_gui_show_slider,
         "Test_slider2",
+        magik_gui_show_slider,
         0.0f,
         -1.0f,
         1.0f,
@@ -1216,13 +1244,14 @@ int main()
     );
 
     staging_area_manager.get_staging_area(3, 0)->add_list<material>(
-        ImVec2(0.0f, 100.0f),
-        magik_gui_show_list<material>,
         "Test_list_selectable",
+        magik_gui_show_list<material>,
         material_list,
         material::get_name,
         e_magik_gui_list_type::List
     );
+
+
 
     uint32_t MAJOR = 0, MINOR = 0, REVISION = 0;
     const char* AS_CHAR;
