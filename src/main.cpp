@@ -1043,18 +1043,46 @@ static void magik_gui_render(GLFWwindow* window)
     glfwSwapBuffers(window); 
 }
 
-magik_gui_sliderfloat slider0 = magik_gui_sliderfloat{
-    "Real",
-    0.5f,
-    -1.0f,
-    1.0f
+magik_gui_sliderfloat slider_rot_x = magik_gui_sliderfloat{
+    "Rotation X",
+    0.0f,
+    -10.0f,
+    10.0f
 };
 
-magik_gui_sliderfloat slider1 = magik_gui_sliderfloat{
-    "Imag",
-    -0.7f,
-    -1.0f,
-    1.0f
+magik_gui_sliderfloat slider_rot_y = magik_gui_sliderfloat{
+    "Rotation Y",
+    0.0f,
+    -10.0f,
+    10.0f
+};
+
+magik_gui_sliderfloat slider_rot_z = magik_gui_sliderfloat{
+    "Rotation Z",
+    0.0f,
+    -10.0f,
+    10.0f
+};
+
+magik_gui_sliderfloat slider_pos_x = magik_gui_sliderfloat{
+    "Position X",
+    2.0f,
+    -100.0f,
+    100.0f
+};
+
+magik_gui_sliderfloat slider_pos_y = magik_gui_sliderfloat{
+    "Position Y",
+    5.0f,
+    -100.0f,
+    100.0f
+};
+
+magik_gui_sliderfloat slider_pos_z = magik_gui_sliderfloat{
+    "Position Z",
+    9.0f,
+    -100.0f,
+    100.0f
 };
 
 magik_gui_colorpicker colorpicker = magik_gui_colorpicker{
@@ -1091,18 +1119,19 @@ static void context_menu(const char* context_menu_name, void* user_data)
         ImGui::TextUnformatted(context_menu_name);
         ImGui::Separator();
 
-        magik_gui_show_interactive_elements(slider0, slider1, colorpicker, material_type_dropdown, material_type_list);
+        magik_gui_show_interactive_elements(slider_rot_x, slider_rot_y, slider_rot_z, slider_pos_x, slider_pos_y, slider_pos_z, colorpicker, material_type_dropdown, material_type_list);
         
-        magik_command_set_julia_set_color_t cmd_color;
-        cmd_color.c0 = colorpicker.color.x;
-        cmd_color.c1 = colorpicker.color.y;
-        cmd_color.c2 = colorpicker.color.z;
-        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_color));
+        magik_command_set_camera_position_t cmd_position;
+        cmd_position.position_x = slider_pos_x.value;
+        cmd_position.position_y = slider_pos_y.value;
+        cmd_position.position_z = slider_pos_z.value;
+        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_position));
 
-        magik_command_set_julia_set_offset_t cmd_offset;
-        cmd_offset.real = slider0.value;
-        cmd_offset.imaginary = slider1.value;
-        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_offset));
+        magik_command_set_camera_orientation_t cmd_orientation;
+        cmd_orientation.rotation_x = slider_rot_x.value;
+        cmd_orientation.rotation_y = slider_rot_y.value;
+        cmd_orientation.rotation_z = slider_rot_z.value;
+        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_orientation));
 
         if (ImGui::Button("Load image"))
         {
@@ -1206,6 +1235,8 @@ static void console_function(void* user_data)
     global_consol_data->mprint();
 }
 
+ImVec2 old_resolution;
+
 static void display_function(void* user_data)
 {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
@@ -1214,10 +1245,14 @@ static void display_function(void* user_data)
 
     ImVec2 available_display_space = ImGui::GetContentRegionAvail();
 
-    magik_command_set_resolution_t c_set_res;
-    c_set_res.x_resolution = std::fabs(available_display_space.x);
-    c_set_res.y_resolution = std::fabs(available_display_space.y);
-    check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &c_set_res));
+    if((old_resolution.x != available_display_space.x) || (old_resolution.y != available_display_space.y))
+    {
+        magik_command_set_camera_resolution_t c_set_res;
+        c_set_res.x_resolution = std::fabs(available_display_space.x);
+        c_set_res.y_resolution = std::fabs(available_display_space.y);
+        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &c_set_res));
+        old_resolution = available_display_space;
+    }
 
     float scale = std::min
     (
@@ -1286,12 +1321,16 @@ int main()
     descriptor.user_stream = nullptr;
     descriptor.cqs_n_reserved_chunk = 4096;
     descriptor.cqs_drop_overflow = false;
+    descriptor.host_reserve_func = nullptr;
+    descriptor.host_release_func = nullptr;
+    descriptor.host_commit_func = nullptr;
+    descriptor.host_decommit_func = nullptr;
 
-    magik_render_manager_t manager = magik_create_render_manager(descriptor);
-    check_magik_errors(magik_get_last_error());
-    magik_aov_framebuffer_object_external_t framebuffer = magik_configure_aov_framebuffer(MAGIK_AOV_CONFIG_OPENGL_INTEROP);
-    check_magik_errors(magik_get_last_error());
-    magik_aov_container_config_opengl_interop_t host_framebuffer;
+    magik_render_manager_t manager;
+    check_magik_errors(magik_render_manager_create(&manager, descriptor));
+    magik_framebuffer_collection_external_t framebuffer;
+    check_magik_errors(magik_configure_framebuffer_collection(&framebuffer, MAGIK_FRAMEBUFFER_COLLECTION_CONFIG_OPENGL_INTEROP));
+    magik_framebuffer_container_config_opengl_interop_t host_framebuffer;
     // magik_aov_container_config_host_t host_framebuffer;
 
     bsp_graph_manager graph_manager;
@@ -1334,14 +1373,18 @@ int main()
 
     magik_get_system_Info();
 
+    bool is_new_fetch = false;
+    bool is_dispatched = false;
+
 	while (!glfwWindowShouldClose(window))
 	{
         magik_gui_new_frame(window);
 
-        if(magik_aov_fetch(manager, framebuffer))
+        check_magik_errors(magik_framebuffer_collection_fetch(manager, &is_new_fetch, framebuffer));
+
+        if(is_new_fetch)
         {
-            check_magik_errors(magik_get_last_error());
-            check_magik_errors(magik_aov_config_opengl_interop_extract(manager, &host_framebuffer, framebuffer, "test"));
+            check_magik_errors(magik_extract_config_opengl_interop(manager, &host_framebuffer, framebuffer, "test"));
             // check_magik_errors(magik_aov_config_host_extract(manager, &host_framebuffer, framebuffer, "test"));
         }
 
@@ -1357,28 +1400,18 @@ int main()
 
         magik_gui_render(window);
 
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed_seconds = std::chrono::duration_cast<std::chrono::microseconds>(now - fps_timer_start).count();
-        cycles++;
-
-        if(elapsed_seconds > 1e6)
-        {
-            double dcc_seconds_passed = (double)elapsed_seconds / 1000000.0;
-            double dcc_fps = cycles / dcc_seconds_passed;
-            // printf("DCC FPS; %i \n", (int)(dcc_fps));
-            double ft = 0.0; 
-            check_magik_errors(magik_fetch_frame_time(&ft));
-            // printf("API FPS; %i \n", (int)(1000000.0 / ft));
-            cycles = 0;
-            fps_timer_start = std::chrono::steady_clock::now();
-        }
-
-        magik_cqs_dispatch_command_buffer(manager);
-        check_magik_errors(magik_get_last_error());
+        check_magik_errors(magik_cqs_dispatch_command_buffer(manager, &is_dispatched));
 	}
 
-    check_magik_errors(magik_destroy_render_manager(manager));
-    check_magik_errors(magik_aov_destroy(framebuffer));
+    magik_renderer_statistics_t statistics;
+    check_magik_errors(magik_fetch_renderer_statistics(manager, &statistics));
+    printf("Sampled time; %f \n", statistics.sampled_time_point_seconds);
+    printf("Average sample time; %f \n", statistics.average_sample_time_seconds);
+    printf("Latest sampled time; %f \n", statistics.latest_sample_time_seconds);
+    printf("Total time; %f \n", statistics.total_render_time_seconds);
+
+    check_magik_errors(magik_render_manager_destroy(manager));
+    check_magik_errors(magik_destroy_framebuffer_collection(framebuffer));
 
 	return 0;
 }
