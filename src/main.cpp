@@ -1361,14 +1361,14 @@ int main()
 
     magik_command_printf_t cmd_printf;
     cmd_printf.length_of_text = 11;
-    std::strncpy(cmd_printf.text, "Hello World", sizeof(cmd_printf.text));
+    strncpy(cmd_printf.text, "Hello World", sizeof(cmd_printf.text));
     cmd_printf.text[sizeof(cmd_printf.text) - 1] = '\0';
     check_magik_errors(magik_cqs_push_command(manager, &cmd_printf));
 
     magik_command_add_aov_t cmd_add_aov;
     cmd_add_aov.channels = 3;
     cmd_add_aov.length_of_name = 4;
-    std::strncpy(cmd_add_aov.name, "test", sizeof(cmd_add_aov.name));
+    strncpy(cmd_add_aov.name, "test", sizeof(cmd_add_aov.name));
     check_magik_errors(magik_cqs_push_command(manager, &cmd_add_aov));
 
     magik_get_system_Info();
