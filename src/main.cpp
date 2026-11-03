@@ -15,6 +15,8 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "magik.h"
+#include "magik_interactive_elements.h"
+#include "magik_gui_ui_configuration.h"
 
 // ### Enum classes ###
 enum class e_magik_gui_split_order_types : unsigned int
@@ -26,7 +28,7 @@ enum class e_magik_gui_split_order_types : unsigned int
 
 
 // ### Defines & Structs ###
-typedef void (*action_caller)(void*);
+typedef void (*action_caller)(void*, magik_gui_context_menu*);
 
 struct console_data
 {
@@ -95,6 +97,8 @@ struct bsp_window
     void* user_data = nullptr;
 
     unsigned int id;
+
+    magik_gui_context_menu* context_menu = nullptr;
 };
 
 struct bsp_state
@@ -518,7 +522,7 @@ struct bsp_graph_manager
         if(node->child_b) compute_absolute_bounds(node->child_b.get(), size_b_x, size_b_y, position_b_x, position_b_y);
     }
 
-    void add_window_to_state(const unsigned int state_id, const bsp_window window)
+    void add_window_to_state(const unsigned int state_id, bsp_window window, magik_gui_context_menu* context_menu)
     {
         if(state_id >= states.size()) 
         {
@@ -541,6 +545,8 @@ struct bsp_graph_manager
         {
             global_consol_data->mlog("[ Warning ] - Window target node does not exist \n");
         }
+
+        window.context_menu = context_menu;
 
         states[state_id].windows.push_back(window);
     }
@@ -631,91 +637,6 @@ struct magik_gui_global_data
     magik_gui_image picture_asset;
     console_data c_log;
 };
-
-struct magik_gui_sliderfloat
-{
-    const char* label;
-    float value;
-    float min = 0.0f;
-    float max = 1.0f;
-
-    void show()
-    {
-        ImGui::SliderFloat(label, &value, min, max);
-    }
-};
-
-struct magik_gui_colorpicker
-{
-    const char* label;
-    ImVec4 color;
-    ImGuiColorEditFlags flags = ImGuiColorEditFlags_PickerHueWheel;
-
-    void show()
-    {
-        ImGui::ColorEdit3(label, &color.x, flags);
-    }
-};
-
-struct magik_gui_checkbox
-{
-    const char* label;
-    bool value;
-    
-    void show()
-    {
-        ImGui::Checkbox(label, &value);
-    }
-};
-
-struct magik_gui_dropdown
-{
-    const char* label;
-    const char* const* elements;
-    int element_count;
-    int selected_element_index = 0;
-    
-    void show()
-    {
-        ImGui::Combo(label, &selected_element_index, elements, element_count);
-    }
-};
-
-struct magik_gui_list
-{
-    const char* label;
-    const char* const* elements;
-    int element_count;
-    int selected_element_index = -1;
-
-    void show()
-    {
-        if (ImGui::BeginListBox(label))
-        {
-            for (int i = 0; i < element_count; i++)
-            {
-                bool selected = selected_element_index == i;
-
-                if (ImGui::Selectable(elements[i], selected))
-                {
-                    selected_element_index = i;
-                }
-
-                if (selected)
-                {
-                    ImGui::SetItemDefaultFocus();
-                }
-            }
-
-            ImGui::EndListBox();
-        }
-    }
-};
-
-template<typename... magik_gui_element>void magik_gui_show_interactive_elements(magik_gui_element&... elements)
-{
-    (elements.show(), ...);
-}
 
 // ### Globals ###
 static magik_gui_global_data g_data_instance;
@@ -882,14 +803,16 @@ static void magik_gui_new_frame(GLFWwindow* window)
     ImGui::NewFrame();
 }
 
-static void magik_gui_window(const char* title, ImGuiWindowFlags flags, const ImVec2 window_pos, const ImVec2 window_size, action_caller user_function, void* user_data)
+static void magik_gui_window(const char* title, ImGuiWindowFlags flags, const ImVec2 window_pos, const ImVec2 window_size, unsigned int window_id, action_caller user_function, void* user_data, magik_gui_staging_area_manager* staging_area_manager, magik_gui_context_menu* context_menu)
 {
     style_begin();
     ImGui::SetNextWindowPos(window_pos);
     ImGui::SetNextWindowSize(window_size);
     ImGui::Begin(title, nullptr, flags);
 
-    if(user_function) user_function(user_data);
+    if(staging_area_manager) staging_area_manager->show(window_id);
+
+    if(user_function) user_function(user_data, context_menu);
 
     style_end();
     ImGui::End();
@@ -919,7 +842,7 @@ static void magik_gui_titlebar(GLFWwindow* window, bsp_graph_manager& graph_mana
     }
 }
 
-static void magik_gui_draw_panels(bsp_graph_manager& graph_manager)
+static void magik_gui_draw_panels(bsp_graph_manager& graph_manager, magik_gui_staging_area_manager* staging_area_manager)
 {
     ImVec2 root_size = ImGui::GetMainViewport()->WorkSize;
     ImVec2 root_position = ImGui::GetMainViewport()->WorkPos;
@@ -929,7 +852,7 @@ static void magik_gui_draw_panels(bsp_graph_manager& graph_manager)
     for(auto iter : graph_manager.states[graph_manager.active_state_id].windows)
     {
         bsp_node* window_node = graph_manager.find_node(graph_manager.states[graph_manager.active_state_id].root.get(), iter.id);
-        magik_gui_window(iter.title, iter.flags, ImVec2(window_node->abs_position_x, window_node->abs_position_y), ImVec2(window_node->abs_size_x, window_node->abs_size_y), iter.user_function, iter.user_data);
+        magik_gui_window(iter.title, iter.flags, ImVec2(window_node->abs_position_x, window_node->abs_position_y), ImVec2(window_node->abs_size_x, window_node->abs_size_y), iter.id, iter.user_function, iter.user_data, staging_area_manager, iter.context_menu);
     }
 }
 
@@ -1043,135 +966,40 @@ static void magik_gui_render(GLFWwindow* window)
     glfwSwapBuffers(window); 
 }
 
-magik_gui_sliderfloat slider_rot_x = magik_gui_sliderfloat{
-    "Rotation X",
-    0.0f,
-    -10.0f,
-    10.0f
-};
-
-magik_gui_sliderfloat slider_rot_y = magik_gui_sliderfloat{
-    "Rotation Y",
-    0.0f,
-    -10.0f,
-    10.0f
-};
-
-magik_gui_sliderfloat slider_rot_z = magik_gui_sliderfloat{
-    "Rotation Z",
-    0.0f,
-    -10.0f,
-    10.0f
-};
-
-magik_gui_sliderfloat slider_pos_x = magik_gui_sliderfloat{
-    "Position X",
-    2.0f,
-    -100.0f,
-    100.0f
-};
-
-magik_gui_sliderfloat slider_pos_y = magik_gui_sliderfloat{
-    "Position Y",
-    5.0f,
-    -100.0f,
-    100.0f
-};
-
-magik_gui_sliderfloat slider_pos_z = magik_gui_sliderfloat{
-    "Position Z",
-    9.0f,
-    -100.0f,
-    100.0f
-};
-
-magik_gui_colorpicker colorpicker = magik_gui_colorpicker{
-    "Test_colorpicker",
-    ImVec4{1.0f, 1.0f, 1.0f, 1.0f}
-};
-
-const char* material_types[] = {
-    "Dielectric",
-    "Conductor"
-};
-
-magik_gui_dropdown material_type_dropdown = magik_gui_dropdown{
-    "Material type",
-    material_types,
-    IM_ARRAYSIZE(material_types)
-};
-
-magik_gui_list material_type_list = magik_gui_list{
-    "Material type",
-    material_types,
-    IM_ARRAYSIZE(material_types)
-};
-
-static void context_menu(const char* context_menu_name, void* user_data)
+static bool show_render_context_menu(void* user_data)
 {
-    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
-    {
-        ImGui::OpenPopup(context_menu_name);
-    }
+    auto* context_menu = (magik_gui_context_menu*)user_data;
+    auto manager = (magik_render_manager_t)context_menu->render_manager;
 
-    if (ImGui::BeginPopup(context_menu_name))
-    {
-        ImGui::TextUnformatted(context_menu_name);
-        ImGui::Separator();
+    // Handles opening, positioning and drawing
+    const bool is_open = magik_gui_show_context_menu(context_menu);
+    if (!is_open) return false;
 
-        magik_gui_show_interactive_elements(slider_rot_x, slider_rot_y, slider_rot_z, slider_pos_x, slider_pos_y, slider_pos_z, colorpicker, material_type_dropdown, material_type_list);
-        
-        magik_command_set_camera_position_t cmd_position;
-        cmd_position.position_x = slider_pos_x.value;
-        cmd_position.position_y = slider_pos_y.value;
-        cmd_position.position_z = slider_pos_z.value;
-        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_position));
+    auto* slider_pos_x = context_menu->staging_area->get_element<magik_gui_slider>("Position X");
+    auto* slider_pos_y = context_menu->staging_area->get_element<magik_gui_slider>("Position Y");
+    auto* slider_pos_z = context_menu->staging_area->get_element<magik_gui_slider>("Position Z");
 
-        magik_command_set_camera_orientation_t cmd_orientation;
-        cmd_orientation.rotation_x = slider_rot_x.value;
-        cmd_orientation.rotation_y = slider_rot_y.value;
-        cmd_orientation.rotation_z = slider_rot_z.value;
-        check_magik_errors(magik_cqs_push_command((magik_render_manager_t)user_data, &cmd_orientation));
+    if (!slider_pos_x || !slider_pos_y || !slider_pos_z) return true;
 
-        if (ImGui::Button("Load image"))
-        {
-            nfdu8char_t* outPath = nullptr;
+    magik_command_set_camera_position_t cmd_position;
+    cmd_position.position_x = slider_pos_x->value;
+    cmd_position.position_y = slider_pos_y->value;
+    cmd_position.position_z = slider_pos_z->value;
+    check_magik_errors(magik_cqs_push_command(manager, &cmd_position));
 
-            nfdu8filteritem_t filters[] = {
-                { "Images", "png,jpg,jpeg" }
-            };
+    auto* slider_rot_x = context_menu->staging_area->get_element<magik_gui_slider>("Rotation X");
+    auto* slider_rot_y = context_menu->staging_area->get_element<magik_gui_slider>("Rotation Y");
+    auto* slider_rot_z = context_menu->staging_area->get_element<magik_gui_slider>("Rotation Z");
 
-            nfdopendialogu8args_t args = {0};
+    if (!slider_rot_x || !slider_rot_y || !slider_rot_z) return true;
 
-            args.filterList = filters;
-            args.filterCount = 1;
+    magik_command_set_camera_orientation_t cmd_orientation;
+    cmd_orientation.rotation_x = slider_rot_x->value;
+    cmd_orientation.rotation_y = slider_rot_y->value;
+    cmd_orientation.rotation_z = slider_rot_z->value;
+    check_magik_errors(magik_cqs_push_command(manager, &cmd_orientation));
 
-            nfdresult_t result = NFD_OpenDialogU8_With(&outPath, &args);
-
-            const char* log_message;
-
-            if (result == NFD_OKAY)
-            {
-                replace_magik_gui_image(global_data->picture_asset, outPath);
-                
-                global_data->c_log.mlog("Loaded %s\n", outPath);
-                
-                NFD_FreePathU8(outPath);
-            }
-            else if (result == NFD_CANCEL)
-            {
-                global_data->c_log.mlog("Image loading cancelled\n");
-            }
-            else
-            {
-                global_data->c_log.mlog("Error loading %s: %s\n", outPath, NFD_GetError());
-            }
-
-            
-        }
-
-        ImGui::EndPopup();
-    }
+    return true;
 }
 
 static void update_display_buffer_config_host(uint32_t dcc_x_resolution, uint32_t dcc_y_resolution, float* h_dcc_ptr, magik_gui_image* display_image)
@@ -1230,14 +1058,16 @@ static void update_display_buffer_config_opengl_interop(uint32_t dcc_x_resolutio
 }
 
 // ### Panel functions ###
-static void console_function(void* user_data)
+static void console_function(void* user_data, magik_gui_context_menu* context_menu)
 {
     global_consol_data->mprint();
+
+    if(context_menu && context_menu->action) context_menu->action(context_menu);
 }
 
 ImVec2 old_resolution;
 
-static void display_function(void* user_data)
+static void display_function(void* user_data, magik_gui_context_menu* context_menu)
 {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
 
@@ -1274,13 +1104,13 @@ static void display_function(void* user_data)
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + offset_x, ImGui::GetCursorPosY() + offset_y));
     ImGui::Image((ImTextureID)(intptr_t)global_data->picture_asset.buffer, image_size);
 
-    context_menu("RenderViewportContextMenu", user_data);
+    if(context_menu && context_menu->action) context_menu->action(context_menu);
 
     ImGui::EndChild();
     ImGui::PopStyleColor();
 }
 
-static void stats_function(void* user_data)
+static void stats_function(void* user_data, magik_gui_context_menu* context_menu)
 {
     ImGuiTextBuffer buffer;
     ImGui::BeginChild("ScrollingRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
@@ -1290,6 +1120,8 @@ static void stats_function(void* user_data)
     {
         ImGui::SetScrollHereY(1.0f);
     }
+
+    if(context_menu && context_menu->action) context_menu->action(context_menu);
 
     ImGui::EndChild();
 }
@@ -1333,6 +1165,15 @@ int main()
     magik_framebuffer_container_config_opengl_interop_t host_framebuffer;
     // magik_aov_container_config_host_t host_framebuffer;
 
+    magik_gui_context_menu render_context_menu{
+        "Render context menu",
+        show_render_context_menu,
+        manager,
+        0.2f
+    };
+
+    configure_render_context_menu(render_context_menu, &manager);
+
     bsp_graph_manager graph_manager;
     graph_manager.add_state();
     graph_manager.set_active_state(0);
@@ -1342,14 +1183,18 @@ int main()
     graph_manager.split_node(graph_manager.active_state_id, 1, e_magik_gui_split_order_types::y_axis, 0.2f, 4);
     graph_manager.split_node(graph_manager.active_state_id, 1, e_magik_gui_split_order_types::y_axis, 0.2f, 5);
 
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, (void*)manager, 0});
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Scene graph", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 1});
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Console", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 2});
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Statistics", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, stats_function, nullptr, 3});
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Settings", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 4});
-    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Test", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 5});
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Render viewport", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, display_function, (void*)manager, 0}, &render_context_menu);
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Scene graph", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 1}, nullptr);
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Console", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 2}, nullptr);
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Statistics", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, stats_function, nullptr, 3}, nullptr);
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Settings", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, nullptr, nullptr, 4}, nullptr);
+    graph_manager.add_window_to_state(graph_manager.active_state_id, bsp_window{"Test", ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse, console_function, nullptr, 5}, nullptr);
 
     graph_manager.add_state(std::move(graph_manager.copy_state(graph_manager.active_state_id)));
+
+    magik_gui_staging_area_manager staging_area_manager;
+
+    configure_staging_areas_menu(staging_area_manager, &manager);
 
     uint32_t MAJOR = 0, MINOR = 0, REVISION = 0;
     const char* AS_CHAR;
@@ -1394,7 +1239,7 @@ int main()
 
         magik_gui_titlebar(window, graph_manager);
 
-        magik_gui_draw_panels(graph_manager);
+        magik_gui_draw_panels(graph_manager, &staging_area_manager);
 
         magik_gui_panel_sliders(graph_manager);
 
