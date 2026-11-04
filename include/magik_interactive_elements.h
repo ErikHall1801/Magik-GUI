@@ -13,6 +13,7 @@ typedef bool (*context_menu_action_caller)(void*);
 
 // Forward declaration for use in magik_gui_dropdown_menu and magik_gui_context_menu
 struct magik_gui_staging_area;
+inline void magik_gui_show_dropdown_menu(void* user_data);
 
 static void magik_gui_begin_labeled(const char* label)
 {
@@ -45,17 +46,25 @@ enum class e_magik_gui_interactive_element_types
 
 struct magik_gui_button
 {
-    const char* label;
+    const char* id;
     int counter;
 
     void* render_manager;
 
     ImVec2 size;
+
+    const char* display_label = id;
+};
+
+struct magik_gui_button_options
+{
+    ImVec2 size{25.0f, 25.0f};
+    const char* display_label = nullptr;
 };
 
 struct magik_gui_slider
 {
-    const char* label;
+    const char* id;
     float value;
     float min_value = 0.0f;
     float max_value = 1.0f;
@@ -63,31 +72,55 @@ struct magik_gui_slider
     void* render_manager;
 
     float relative_width = 1.0f;
+    const char* display_label = id;
 
     ImGuiSliderFlags flags = false;
     const char* format = "%.2f";
 
 };
 
+struct magik_gui_slider_options
+{
+    float relative_width = 1.0f;
+    const char* display_label = nullptr;
+    ImGuiSliderFlags flags = false;
+    const char* format = "%.2f";
+};
+
 struct magik_gui_colorpicker
 {
-    const char* label;
+    const char* id;
     ImVec4 color;
 
     void* render_manager;
 
     float relative_width = 1.0f;
+    const char* display_label = id;
 
     ImGuiColorEditFlags flags = ImGuiColorEditFlags_PickerHueWheel;
+};
 
+struct magik_gui_colorpicker_options
+{
+    float relative_width = 1.0f;
+    const char* display_label = nullptr;
+
+    ImGuiColorEditFlags flags = ImGuiColorEditFlags_PickerHueWheel;
 };
 
 struct magik_gui_checkbox
 {
-    const char* label;
+    const char* id;
     bool value;
 
     void* render_manager;
+
+    const char* display_label = id;
+};
+
+struct magik_gui_checkbox_options
+{
+    const char* display_label = nullptr;
 };
 
 enum class e_magik_gui_list_type
@@ -99,18 +132,18 @@ enum class e_magik_gui_list_type
 template <typename T>
 struct magik_gui_base_list
 {
-    const char* label;
+    const char* id;
     std::vector<T> elements;
     
     const char* (*get_element_name)(const T&);
     
     e_magik_gui_list_type type;
 
-    void* render_manager;
-
     int selected_element_index = -1;
 
     float relative_width = 1.0f;
+
+    const char* display_label = id;
 };
 
 struct magik_gui_list
@@ -123,23 +156,38 @@ struct magik_gui_list
     float height = 0.0f;
 
     template <typename T>
-    static magik_gui_list create(const char* label, std::vector<T> elements, const char* (*get_name)(const T&), e_magik_gui_list_type type, void (*show_fn)(void*), void* render_manager)
+    static magik_gui_list create(const char* id, std::vector<T> elements, const char* (*get_name)(const T&), e_magik_gui_list_type type, void (*show_fn)(void*), void* render_manager, int selected_element_index, float relative_width, const char* display_label, float height)
     {
-        auto* list = new magik_gui_base_list<T>{ label, std::move(elements), get_name, type };
+        const char* label = display_label ? display_label : id;
 
-        return magik_gui_list{
+        auto* list = new magik_gui_base_list<T>{ id, std::move(elements), get_name, type, selected_element_index, relative_width, label };
+
+        magik_gui_list result{
             std::unique_ptr<void, void(*)(void*)>(list, [](void* ptr) { delete (magik_gui_base_list<T>*)ptr; }),
             show_fn,
             render_manager
         };
+
+        result.height = height;
+        return result;
     }
 
     void show() { show_fn(data.get()); }
 };
 
+struct magik_gui_list_options
+{
+    int selected_element_index = -1;
+    float relative_width = 1.0f;
+    const char* display_label = nullptr;
+    float height = 0.0f;
+};
+
 struct magik_gui_dropdown_menu
 {
-    const char* label;
+    const char* id;
+    const char* display_label = id;
+    bool open = false;
     
     interactive_element_action_caller action;
 
@@ -147,6 +195,11 @@ struct magik_gui_dropdown_menu
 
     std::unique_ptr<magik_gui_staging_area> staging_area = std::make_unique<magik_gui_staging_area>();
 
+};
+
+struct magik_gui_dropdown_menu_options
+{
+    const char* display_label = nullptr;
     bool open = false;
 };
 
@@ -184,6 +237,130 @@ void magik_gui_show_generic_list(void* user_data)
     ((magik_gui_list*)user_data)->show();
 }
 
+void magik_gui_show_button(void* user_data)
+{
+    magik_gui_button* button = (magik_gui_button*)user_data;
+
+    magik_gui_begin_labeled(button->display_label);
+    if (ImGui::Button("##button", button->size))
+    {
+        button->counter++;
+    }
+    magik_gui_end_labeled();
+
+}
+
+void magik_gui_show_slider(void* user_data)
+{
+    magik_gui_slider* slider = (magik_gui_slider*)user_data;
+
+    magik_gui_begin_labeled(slider->display_label);
+
+    ImGui::SetNextItemWidth(magik_gui_get_available_width(slider->relative_width));
+    ImGui::SliderFloat("##slider", &slider->value, slider->min_value, slider->max_value, slider->format, slider->flags);
+    
+    magik_gui_end_labeled();
+}
+
+void magik_gui_show_colorpicker(void* user_data)
+{
+    magik_gui_colorpicker* colorpicker = (magik_gui_colorpicker*)user_data;
+
+    magik_gui_begin_labeled(colorpicker->display_label);
+
+    ImGui::SetNextItemWidth(magik_gui_get_available_width(colorpicker->relative_width));
+
+    ImGui::ColorEdit3("##color", &colorpicker->color.x, colorpicker->flags);
+    magik_gui_end_labeled();
+}
+
+void magik_gui_show_checkbox(void* user_data)
+{
+    magik_gui_checkbox* checkbox = (magik_gui_checkbox*)user_data;
+
+    magik_gui_begin_labeled(checkbox->display_label);
+    ImGui::Checkbox("##checkbox", &checkbox->value);
+    magik_gui_end_labeled();
+}
+
+
+template <typename T>
+void magik_gui_show_list_dropdown(void* user_data)
+{
+    magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)user_data;
+
+    magik_gui_begin_labeled(list->display_label);
+
+    ImGui::SetNextItemWidth(magik_gui_get_available_width(list->relative_width));
+
+    ImGui::Combo(
+        "##list",
+        &list->selected_element_index,
+        [](void* data, int index) -> const char*
+        {
+            magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)data;
+
+            if (index < 0 || index >= static_cast<int>(list->elements.size())) return "";
+
+            return list->get_element_name(list->elements[index]);
+        },
+        list,
+        static_cast<int>(list->elements.size())
+    );
+    magik_gui_end_labeled();
+}
+
+template <typename T>
+void magik_gui_show_list_selectable(void* user_data)
+{
+    magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)user_data;
+
+    float item_height = ImGui::GetTextLineHeightWithSpacing();
+    float box_height = item_height * static_cast<float>(list->elements.size()) + ImGui::GetStyle().FramePadding.y * 2.0f;
+
+    magik_gui_begin_labeled(list->display_label);
+
+    ImGui::SetNextItemWidth(magik_gui_get_available_width(list->relative_width));
+
+    if (ImGui::BeginListBox("##list", ImVec2(0.0f, box_height)))
+    {
+        for (int i = 0; i < static_cast<int>(list->elements.size()); i++)
+        {
+            bool selected = list->selected_element_index == i;
+
+            if (ImGui::Selectable(list->get_element_name(list->elements[i]), selected))
+            {
+                list->selected_element_index = i;
+            }
+
+            if (selected) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndListBox();
+    }
+    magik_gui_end_labeled();
+}
+
+template <typename T>
+void magik_gui_show_list(void* user_data)
+{
+    magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)user_data;
+
+    switch (list->type)
+    {
+        case e_magik_gui_list_type::Dropdown:
+        {
+            magik_gui_show_list_dropdown<T>(user_data);
+            break;
+        }
+        
+        case e_magik_gui_list_type::List:
+        {
+            magik_gui_show_list_selectable<T>(user_data);
+            break;
+        }
+    }
+}
+
 struct magik_gui_staging_area
 {
     // TODO: Call this position something more descriptive to dinstinguish from element position
@@ -201,13 +378,13 @@ struct magik_gui_staging_area
     std::vector<magik_gui_interactive_element> interactive_elements;
 
     template<typename T>
-    T* get_element(const char* label)
+    T* get_element(const char* id)
     {
         for (size_t i = 0; i < interactive_elements.size(); ++i)
         {
             if (auto* element = std::get_if<T>(&interactive_elements[i].data))
             {
-                if (strcmp(element->label, label) == 0)
+                if (strcmp(element->id, id) == 0)
                 {
                     return element;
                 }
@@ -216,68 +393,96 @@ struct magik_gui_staging_area
         return nullptr;
     }
 
-    magik_gui_button& add_button(const char* label, interactive_element_action_caller action, ImVec2 size, void* render_manager)
+    magik_gui_button& add_button(const char* id, void* render_manager, magik_gui_button_options options = {})
     {
+        const char* label = options.display_label ? options.display_label : id;
+
         interactive_elements.push_back({magik_gui_interactive_element{
                 position,
-                action,
-                magik_gui_button{label, 0, render_manager, size}
+                magik_gui_show_button,
+                magik_gui_button{id, 0, render_manager, options.size, label}
             }
         });
 
         return std::get<magik_gui_button>(interactive_elements.back().data);
     }
 
-    magik_gui_slider& add_slider(const char* label, interactive_element_action_caller action, float value, float min_value, float max_value, void* render_manager, float width = 1.0f)
+    magik_gui_slider& add_slider(const char* id, float value, float min_value, float max_value, void* render_manager, magik_gui_slider_options options = {})
     {
+        const char* label = options.display_label ? options.display_label : id;
+
         interactive_elements.push_back(magik_gui_interactive_element{
             position,
-            action,
-            magik_gui_slider{label, value, min_value, max_value, render_manager, width}
+            magik_gui_show_slider,
+            magik_gui_slider{id, value, min_value, max_value, render_manager, options.relative_width, label}
         });
 
         return std::get<magik_gui_slider>(interactive_elements.back().data);
     }
 
-    magik_gui_dropdown_menu& add_dropdown_menu(const char* label, interactive_element_action_caller action, void* render_manager)
+    magik_gui_dropdown_menu& add_dropdown_menu(const char* id, void* render_manager, magik_gui_dropdown_menu_options options = {})
     {
+        const char* label = options.display_label ? options.display_label : id;
+
         interactive_elements.push_back(magik_gui_interactive_element{
             position,
-            action,
-            magik_gui_dropdown_menu{label}
+            magik_gui_show_dropdown_menu,
+            magik_gui_dropdown_menu{id, label, options.open}
         });
         
         return std::get<magik_gui_dropdown_menu>(interactive_elements.back().data);
     }
 
     template <typename T>
-    magik_gui_list& add_list(const char* label, void (*list_show_fn)(void*), std::vector<T> elements, const char* (*get_element_name)(const T&), e_magik_gui_list_type type, void* render_manager)
+    magik_gui_list& add_list(const char* id, std::vector<T> elements, const char* (*get_element_name)(const T&), e_magik_gui_list_type type, void* render_manager, magik_gui_list_options options = {})
     {
+        const char* label = options.display_label ? options.display_label : id;
+
+        void (*list_show_fn)(void*) = nullptr;
+
+        switch (type)
+        {
+            case e_magik_gui_list_type::List:
+            {
+                list_show_fn = magik_gui_show_list_selectable<T>;
+                break;
+            }
+            case e_magik_gui_list_type::Dropdown:
+            {
+                list_show_fn = magik_gui_show_list_dropdown<T>;
+                break;
+            }
+        }
+
         interactive_elements.push_back(magik_gui_interactive_element{
             position,
             magik_gui_show_generic_list,
-            magik_gui_list::create<T>(label, std::move(elements), get_element_name, type, list_show_fn, render_manager)
+            magik_gui_list::create<T>(id, std::move(elements), get_element_name, type, list_show_fn, render_manager, options.selected_element_index, options.relative_width, options.display_label, options.height)
         });
         return std::get<magik_gui_list>(interactive_elements.back().data);
     }
 
-    magik_gui_checkbox& add_checkbox(const char* label, interactive_element_action_caller action, bool value, void* render_manager)
+    magik_gui_checkbox& add_checkbox(const char* id, bool value, void* render_manager, magik_gui_checkbox_options options = {})
     {
+        const char* label = options.display_label ? options.display_label : id;
+
         interactive_elements.push_back(magik_gui_interactive_element{
             position,
-            action,
-            magik_gui_checkbox{label, value, render_manager}
+            magik_gui_show_checkbox,
+            magik_gui_checkbox{id, value, render_manager, label}
         });
 
         return std::get<magik_gui_checkbox>(interactive_elements.back().data);
     }
 
-    magik_gui_colorpicker& add_colorpicker(const char* label, interactive_element_action_caller action, ImVec4 color, void* render_manager)
+    magik_gui_colorpicker& add_colorpicker(const char* id, ImVec4 color, void* render_manager, magik_gui_colorpicker_options options = {})
     {
+        const char* label = options.display_label ? options.display_label : id;
+
         interactive_elements.push_back(magik_gui_interactive_element{
             position,
-            action,
-            magik_gui_colorpicker{label, color, render_manager}
+            magik_gui_show_colorpicker,
+            magik_gui_colorpicker{id, color, render_manager, options.relative_width , label, options.flags}
         });
 
         return std::get<magik_gui_colorpicker>(interactive_elements.back().data);
@@ -350,14 +555,26 @@ struct magik_gui_staging_area_manager
     }
 };
 
+struct magik_gui_context_menu_options
+{
+    float relative_width = 1.0f;
+    float vertical_offset_between_elements = 5.0f;
+    const char* display_label = nullptr;
+    float popup_width = 250.0f;
+};
+
 struct magik_gui_context_menu
 {
-    const char* label;
+    const char* id;
     
     context_menu_action_caller action;
     void* render_manager;
 
     float relative_width = 1.0f;
+    float vertical_offset_between_elements = 5.0f;
+
+    const char* display_label = id;
+
     float popup_width = 250.0f;
 
 
@@ -366,146 +583,31 @@ struct magik_gui_context_menu
     
     ImVec2 position;
 
+    magik_gui_context_menu(const char* id_, context_menu_action_caller action_, void* render_manager_, magik_gui_context_menu_options options = {})
+    {
+        id = id_;
+        action = action_;
+        render_manager = render_manager_;
+        relative_width = options.relative_width;
+        vertical_offset_between_elements = options.vertical_offset_between_elements;
+        display_label = options.display_label ? options.display_label : id_;
+        popup_width = options.popup_width;
+    }
 };
 
-template <typename T>
-void magik_gui_show_list_dropdown(void* user_data)
-{
-    magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)user_data;
 
-    magik_gui_begin_labeled(list->label);
-
-    ImGui::SetNextItemWidth(magik_gui_get_available_width(list->relative_width));
-
-    ImGui::Combo(
-        "##list",
-        &list->selected_element_index,
-        [](void* data, int index) -> const char*
-        {
-            magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)data;
-
-            if (index < 0 || index >= static_cast<int>(list->elements.size())) return "";
-
-            return list->get_element_name(list->elements[index]);
-        },
-        list,
-        static_cast<int>(list->elements.size())
-    );
-    magik_gui_end_labeled();
-}
-
-template <typename T>
-void magik_gui_show_list_selectable(void* user_data)
-{
-    magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)user_data;
-
-    float item_height = ImGui::GetTextLineHeightWithSpacing();
-    float box_height = item_height * static_cast<float>(list->elements.size()) + ImGui::GetStyle().FramePadding.y * 2.0f;
-
-    magik_gui_begin_labeled(list->label);
-
-    ImGui::SetNextItemWidth(magik_gui_get_available_width(list->relative_width));
-
-    if (ImGui::BeginListBox("##list", ImVec2(0.0f, box_height)))
-    {
-        for (int i = 0; i < static_cast<int>(list->elements.size()); i++)
-        {
-            bool selected = list->selected_element_index == i;
-
-            if (ImGui::Selectable(list->get_element_name(list->elements[i]), selected))
-            {
-                list->selected_element_index = i;
-            }
-
-            if (selected) ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndListBox();
-    }
-    magik_gui_end_labeled();
-}
-
-template <typename T>
-void magik_gui_show_list(void* user_data)
-{
-    magik_gui_base_list<T>* list = (magik_gui_base_list<T>*)user_data;
-
-    switch (list->type)
-    {
-        case e_magik_gui_list_type::Dropdown:
-        {
-            magik_gui_show_list_dropdown<T>(user_data);
-            break;
-        }
-        
-        case e_magik_gui_list_type::List:
-        {
-            magik_gui_show_list_selectable<T>(user_data);
-            break;
-        }
-    }
-}
-
-void magik_gui_show_button(void* user_data)
-{
-    magik_gui_button* button = (magik_gui_button*)user_data;
-
-    magik_gui_begin_labeled(button->label);
-    if (ImGui::Button("##button", button->size))
-    {
-        button->counter++;
-    }
-    magik_gui_end_labeled();
-
-}
-
-void magik_gui_show_slider(void* user_data)
-{
-    magik_gui_slider* slider = (magik_gui_slider*)user_data;
-
-    magik_gui_begin_labeled(slider->label);
-
-    ImGui::SetNextItemWidth(magik_gui_get_available_width(slider->relative_width));
-    ImGui::SliderFloat("##slider", &slider->value, slider->min_value, slider->max_value, slider->format, slider->flags);
-    
-    magik_gui_end_labeled();
-
-    //float avail_width = ImGui::GetContentRegionAvail().x;
-
-
-    //ImGui::SliderFloat(slider->label, &slider->value, slider->min_value, slider->max_value, slider->format, slider->flags);
-}
-
-void magik_gui_show_colorpicker(void* user_data)
-{
-    magik_gui_colorpicker* colorpicker = (magik_gui_colorpicker*)user_data;
-
-    magik_gui_begin_labeled(colorpicker->label);
-
-    ImGui::SetNextItemWidth(magik_gui_get_available_width(colorpicker->relative_width));
-
-    ImGui::ColorEdit3("##color", &colorpicker->color.x, colorpicker->flags);
-    magik_gui_end_labeled();
-}
-
-void magik_gui_show_checkbox(void* user_data)
-{
-    magik_gui_checkbox* checkbox = (magik_gui_checkbox*)user_data;
-
-    magik_gui_begin_labeled(checkbox->label);
-    ImGui::Checkbox("##checkbox", &checkbox->value);
-    magik_gui_end_labeled();
-}
 
 bool magik_gui_show_context_menu(void* user_data)
 {
     magik_gui_context_menu* context_menu = (magik_gui_context_menu*)user_data;
 
     context_menu->staging_area->vertical_offset_from_top = 0.0f;
+    context_menu->staging_area->vertical_offset_between_elements = context_menu->vertical_offset_between_elements;
 
     if (ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows) && ImGui::IsMouseClicked(ImGuiMouseButton_Right))
     {
         context_menu->position = ImGui::GetMousePos();
-        ImGui::OpenPopup(context_menu->label);
+        ImGui::OpenPopup(context_menu->id);
     }
 
     float parent_width = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
@@ -515,7 +617,7 @@ bool magik_gui_show_context_menu(void* user_data)
     ImGui::SetNextWindowPos(context_menu->position);
     ImGui::SetNextWindowSize(ImVec2(popup_width, 0.0f), ImGuiCond_Always);
 
-    bool is_open = ImGui::BeginPopup(context_menu->label);
+    bool is_open = ImGui::BeginPopup(context_menu->display_label);
     if (is_open)
     {
         context_menu->staging_area->auto_size_width = false;
@@ -530,15 +632,11 @@ void magik_gui_show_dropdown_menu(void* user_data)
 {
     magik_gui_dropdown_menu* dropdown_menu = (magik_gui_dropdown_menu*)user_data;
 
+    dropdown_menu->staging_area->vertical_offset_from_top = 0.0f;
+
     float avail_width = ImGui::GetContentRegionAvail().x;
 
-    //ImGui::SetNextItemWidth(avail_width*dropdown_menu->relative_width);
-    //ImGui::SetNextWindowSizeConstraints(
-    //    ImVec2(avail_width*dropdown_menu->relative_width, 0.0f),
-    //    ImVec2(avail_width*dropdown_menu->relative_width, FLT_MAX)
-    //);
-
-    if (ImGui::BeginCombo(dropdown_menu->label, dropdown_menu->label))
+    if (ImGui::BeginCombo(dropdown_menu->display_label, dropdown_menu->id))
     {
         dropdown_menu->staging_area->show();
 

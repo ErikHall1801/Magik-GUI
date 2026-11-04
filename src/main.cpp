@@ -1169,7 +1169,7 @@ int main()
         "Render context menu",
         show_render_context_menu,
         manager,
-        0.2f
+        { .relative_width = 0.2f }
     };
 
     configure_render_context_menu(render_context_menu, &manager);
