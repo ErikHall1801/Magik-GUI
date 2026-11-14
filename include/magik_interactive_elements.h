@@ -54,6 +54,8 @@ struct magik_gui_button
     ImVec2 size;
 
     const char* display_label = id;
+
+    bool pressed = false;
 };
 
 struct magik_gui_button_options
@@ -245,6 +247,7 @@ void magik_gui_show_button(void* user_data)
     if (ImGui::Button("##button", button->size))
     {
         button->counter++;
+        button->pressed = true;
     }
     magik_gui_end_labeled();
 
@@ -367,8 +370,8 @@ struct magik_gui_staging_area
     ImVec2 position;
     float height = 0.0f;
 
-    const unsigned int id = -1;
-    const unsigned int parent_window_id = -1;
+    const unsigned int id = 0; 
+    const unsigned int parent_window_id = 0;
 
     float vertical_offset_from_top = 30.0f;
     float vertical_offset_between_elements = 5.0f;
@@ -400,7 +403,7 @@ struct magik_gui_staging_area
         interactive_elements.push_back({magik_gui_interactive_element{
                 position,
                 magik_gui_show_button,
-                magik_gui_button{id, 0, render_manager, options.size, label}
+                magik_gui_button{id, 0, render_manager, options.size, label, false}
             }
         });
 

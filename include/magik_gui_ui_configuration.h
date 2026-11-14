@@ -51,8 +51,57 @@ void configure_render_context_menu(magik_gui_context_menu& render_context_menu, 
         9.0f,
         -100.0f,
         100.0f,
-        manager,
-        { .display_label = "Just a test name" }
+        manager
+        // { .display_label = "Just a test name" }
+    );
+
+    render_context_menu.staging_area->add_slider(
+        "Schwarzschild mass",
+        6.7329546075E26f,
+        0.0f,
+        6.7329546075E27f,
+        manager
+    );
+
+    render_context_menu.staging_area->add_slider(
+        "Kerr mass",
+        6.7329546075E26f,
+        -6.7329546075E27f,
+        6.7329546075E27f,
+        manager
+    );
+
+    render_context_menu.staging_area->add_slider(
+        "Kerr spin",
+        0.999,
+        -2.0f,
+        2.0f,
+        manager
+    );
+
+    render_context_menu.staging_area->add_slider(
+        "Velocity X",
+        0.0f,
+        -1e9f,
+        1e9f,
+        manager
+    );
+
+    render_context_menu.staging_area->add_slider(
+        "Velocity Y",
+        0.0f,
+        -1e9f,
+        1e9f,
+        manager
+    );
+
+    render_context_menu.staging_area->add_slider(
+        "Velocity Z",
+        0.0f,
+        -1e9f,
+        1e9f,
+        manager
+        // { .display_label = "Just a test name" }
     );
 }
 
@@ -96,7 +145,7 @@ void configure_staging_areas_menu(magik_gui_staging_area_manager& staging_area_m
         materials,
         Material::get_name,
         e_magik_gui_list_type::List,
-        manager
+        manager 
     );
 
     magik_gui_dropdown_menu& dropdown = staging_area_manager.get_staging_area(4, 0)->add_dropdown_menu(
@@ -109,12 +158,6 @@ void configure_staging_areas_menu(magik_gui_staging_area_manager& staging_area_m
         "Checkbox inside dropdown",
         false,
         manager
-    );
-
-    dropdown.staging_area->add_button(
-        "Button inside dropdown menu",
-        manager,
-        { .size = ImVec2{100.0f, 100.0f} }
     );
 }
 

@@ -999,6 +999,38 @@ static bool show_render_context_menu(void* user_data)
     cmd_orientation.rotation_z = slider_rot_z->value;
     check_magik_errors(magik_cqs_push_command(manager, &cmd_orientation));
 
+    auto* schwarzschild_mass = context_menu->staging_area->get_element<magik_gui_slider>("Schwarzschild mass");
+    auto* kerr_mass = context_menu->staging_area->get_element<magik_gui_slider>("Kerr mass");
+    auto* kerr_spin = context_menu->staging_area->get_element<magik_gui_slider>("Kerr spin");
+
+    if(schwarzschild_mass->value == 0.0f)
+    {
+        magik_command_set_metric_minkowski_t cmd_set_minkowski;
+        check_magik_errors(magik_cqs_push_command(manager, &cmd_set_minkowski));
+    }
+    else
+    {
+        magik_command_set_metric_kerr_t cmd_set_kerr;
+        check_magik_errors(magik_cqs_push_command(manager, &cmd_set_kerr));
+    }
+
+    magik_command_set_kerr_mass_t cmd_kerr_mass;
+    cmd_kerr_mass.mass_parameter = kerr_mass->value;
+    check_magik_errors(magik_cqs_push_command(manager, &cmd_kerr_mass));
+
+    magik_command_set_kerr_spin_t cmd_kerr_spin;
+    cmd_kerr_spin.spin_parameter = kerr_spin->value;
+    check_magik_errors(magik_cqs_push_command(manager, &cmd_kerr_spin));
+
+    auto* velocity_x = context_menu->staging_area->get_element<magik_gui_slider>("Velocity X");
+    auto* velocity_y = context_menu->staging_area->get_element<magik_gui_slider>("Velocity Y");
+    auto* velocity_z = context_menu->staging_area->get_element<magik_gui_slider>("Velocity Z");
+
+    magik_command_set_camera_three_velocity_t cmd_three_velocity;
+    cmd_three_velocity.velocity_x = velocity_x->value;
+    cmd_three_velocity.velocity_y = velocity_y->value;
+    cmd_three_velocity.velocity_z = velocity_z->value;
+    check_magik_errors(magik_cqs_push_command(manager, &cmd_three_velocity));
     return true;
 }
 
@@ -1153,10 +1185,7 @@ int main()
     descriptor.user_stream = nullptr;
     descriptor.cqs_n_reserved_chunk = 4096;
     descriptor.cqs_drop_overflow = false;
-    descriptor.host_reserve_func = nullptr;
-    descriptor.host_release_func = nullptr;
-    descriptor.host_commit_func = nullptr;
-    descriptor.host_decommit_func = nullptr;
+    descriptor.cqs_drop_overflow = true;
 
     magik_render_manager_t manager;
     check_magik_errors(magik_render_manager_create(&manager, descriptor));
@@ -1249,11 +1278,11 @@ int main()
 	}
 
     magik_renderer_statistics_t statistics;
-    check_magik_errors(magik_fetch_renderer_statistics(manager, &statistics));
-    printf("Sampled time; %f \n", statistics.sampled_time_point_seconds);
-    printf("Average sample time; %f \n", statistics.average_sample_time_seconds);
-    printf("Latest sampled time; %f \n", statistics.latest_sample_time_seconds);
-    printf("Total time; %f \n", statistics.total_render_time_seconds);
+    // check_magik_errors(magik_fetch_renderer_statistics(manager, &statistics));
+    // printf("Sampled time; %f \n", statistics.sampled_time_point_seconds);
+    // printf("Average sample time; %f \n", statistics.average_sample_time_seconds);
+    // printf("Latest sampled time; %f \n", statistics.latest_sample_time_seconds);
+    // printf("Total time; %f \n", statistics.total_render_time_seconds);
 
     check_magik_errors(magik_render_manager_destroy(manager));
     check_magik_errors(magik_destroy_framebuffer_collection(framebuffer));
