@@ -21,11 +21,13 @@
 
 #include <cmath>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "app.h"
+#include "camera_controller.h"
 
 namespace magik_gui
 {
@@ -44,6 +46,7 @@ namespace magik_gui
     {
         constexpr double speed_of_light = 299792458.0;     // m/s
         constexpr double gravitational_constant = 6.67430e-11;
+        constexpr float min_abs_mass = 1.0f;               // kg, smallest |M| sent to Magik (0 is degenerate)
 
         inline double schwarzschild_radius(double mass_kg) { return 2.0 * gravitational_constant * mass_kg / (speed_of_light * speed_of_light); }
 
@@ -128,9 +131,11 @@ namespace magik_gui
         auto& cam_position  = store.declare<vec3>("camera.position", { 2.0f, 5.0f, 9.0f });
         auto& cam_rotation  = store.declare<vec3>("camera.orientation", { 0.0f, 0.0f, 0.0f });   // radians
         auto& cam_velocity  = store.declare<vec3>("camera.velocity", { 0.0f, 0.0f, 0.0f });      // m/s
+        auto& cam_pivot     = store.declare<vec3>("camera.pivot", { 0.0f, 0.0f, 0.0f });         // orbit centre, GUI only
         // Spacetime
         auto& metric        = store.declare<int>("scene.metric", 2);                             // 0 Minkowski, 1 Schwarzschild, 2 Kerr
-        auto& schw_mass     = store.declare<float>("scene.schwarzschild_mass", 6.7329546075E26f);
+        auto& schw_mass     = store.declare<float>("scene.schwarzschild_mass", 6.7329546075E26f);   // |M|
+        auto& schw_negative = store.declare<bool>("scene.schwarzschild_negative", false);           // sign of M
         auto& kerr_mass     = store.declare<float>("scene.kerr_mass", 6.7329546075E26f);
         auto& kerr_spin     = store.declare<float>("scene.kerr_spin", 0.999f);
         // AOVs
@@ -144,7 +149,10 @@ namespace magik_gui
         auto& auto_scroll   = store.declare<bool>("console.auto_scroll", true);
 
         kerr_mass.sanitize_with([](const float& m) { return std::max(m, 1.0f); });     // Magik ignores M <= 0
-        schw_mass.sanitize_with([](const float& m) { return std::max(m, 0.0f); });
+        // Magik supports negative Schwarzschild mass (it uses |M| and the sign separately), but M == 0 makes its
+        // length scale G|M|/c^2 zero and every position is divided by it. The GUI mirrors Magik: a magnitude that
+        // never reaches 0 plus a sign, combined into one signed value when the command is sent.
+        schw_mass.sanitize_with([](const float& m) { return std::max(std::fabs(m), detail::min_abs_mass); });
         active_camera.sanitize_with([](const int& id) { return std::max(id, 0); });
         aov_new_ch.sanitize_with([](const int& n) { return std::clamp(n, 1, 4); });
 
@@ -215,12 +223,14 @@ namespace magik_gui
             if (c.source == change_source::user) log.log(log_level::info, "Metric: %s", c.new_value == 0 ? "Minkowski" : c.new_value == 1 ? "Schwarzschild" : "Kerr");
         });
 
-        schw_mass.on_change([&](const change<float>& c)
+        auto push_schwarzschild_mass = [&]
         {
             magik_command_set_schwarzschild_mass_t cmd;
-            cmd.mass_parameter = c.new_value;
+            cmd.mass_parameter = schw_negative.get() ? -schw_mass.get() : schw_mass.get();
             link.push(cmd);
-        });
+        };
+        schw_mass.on_change([=](const change<float>&) { push_schwarzschild_mass(); });
+        schw_negative.on_change([=](const change<bool>& c) { if (!c.is_init()) push_schwarzschild_mass(); });   // init already sent by schw_mass
 
         kerr_mass.on_change([&](const change<float>& c)
         {
@@ -299,6 +309,9 @@ namespace magik_gui
         }
 
         // --- Camera ---
+        // Orbit controller for the viewport (Blender style). It only edits the camera values above.
+        auto orbit = std::make_shared<orbit_controller>(cam_position, cam_rotation, cam_pivot);
+
         auto& camera = settings.section("Camera");
         {
             camera.spinner("Active camera", active_camera, 1).range(0, 63);
@@ -325,32 +338,49 @@ namespace magik_gui
                 return detail::format("%.4f", speed / detail::speed_of_light);
             });
 
-            auto& buttons = camera.row({ 1.0f, 1.0f });
+            camera.drag("Pivot", cam_pivot, 0.02f)
+                .format("%.2f")
+                .tooltip("Point the viewport camera orbits around. Shift + middle mouse drag moves it with the camera.");
+
+            auto& buttons = camera.row({ 1.0f, 1.0f, 1.0f });
+            buttons.button("Look at pivot").on_click([=](const button_event&) { orbit->look_at_pivot(); });
             buttons.button("Reset camera").on_click([&](const button_event&)
             {
                 cam_position.reset(change_source::user);
                 cam_rotation.reset(change_source::user);
                 cam_velocity.reset(change_source::user);
+                cam_pivot.reset(change_source::user);
             });
             buttons.button("Stop").on_click([&](const button_event&) { cam_velocity.set({ 0.0f, 0.0f, 0.0f }, change_source::user); }).tooltip("Set the velocity to zero");
+
+            camera.text("Viewport: middle mouse orbit, wheel zoom, Shift pan, Ctrl dolly (Alt + left mouse = middle mouse)")
+                .colored(text::tone::dim)
+                .wrapped();
         }
 
         // --- Spacetime ---
         auto& spacetime = settings.section("Spacetime");
         {
-            spacetime.segmented("Metric", metric, { "Minkowski", "Schwarzschild", "Kerr" }).labels(label_mode::top);
+            spacetime.dropdown("Metric", metric, { "Minkowski", "Schwarzschild", "Kerr" });
 
-            spacetime.drag("Mass", schw_mass, 1.0e24f)
-                .range(0.0f, 1.0e32f)
+            spacetime.drag("Mass", schw_mass)
+                .range(detail::min_abs_mass, 1.0e32f)
                 .logarithmic()
                 .format("%.4g kg")
                 .commit(commit_policy::on_release())
+                .tooltip("|M|. Ctrl + click to type a value.")
                 .visible_if([&] { return metric.get() == 1; });
+            spacetime.checkbox("Negative mass", schw_negative)
+                .visible_if([&] { return metric.get() == 1; });
+            spacetime.text("Negative mass: repulsive, no event horizon")
+                .colored(text::tone::warning)
+                .wrapped()
+                .visible_if([&] { return metric.get() == 1 && schw_negative.get(); });
             spacetime.readout("r_s", [&] { return detail::format("%.4g m", detail::schwarzschild_radius(schw_mass.get())); })
                 .tooltip("Schwarzschild radius 2GM / c^2")
                 .visible_if([&] { return metric.get() == 1; });
 
-            spacetime.drag("Mass", kerr_mass, 1.0e24f)
+            spacetime.drag("Mass", kerr_mass)
                 .range(1.0f, 1.0e32f)
                 .logarithmic()
                 .format("%.4g kg")
@@ -419,7 +449,12 @@ namespace magik_gui
         // ### Viewport     ###
         // ####################
 
-        viewport.custom([&](frame&) { a.draw_viewport(); });
+        viewport.custom([&a, orbit](frame&)
+        {
+            const float width = ImGui::GetContentRegionAvail().x;
+            a.draw_viewport();
+            orbit->update(width);
+        });
 
         // Right-click menu: the same values as the Settings panel, so both stay in sync
         container& menu = viewport.context_menu(320.0f);
@@ -432,7 +467,7 @@ namespace magik_gui
             menu.drag("Rotation", cam_rotation, 0.005f).angle().commit(commit_policy::throttle(33));
             menu.drag("Velocity", cam_velocity, 1.0e5f).format("%.3g").commit(commit_policy::throttle(33));
             menu.separator("Spacetime");
-            menu.segmented("Metric", metric, { "Mink.", "Schw.", "Kerr" });
+            menu.dropdown("Metric", metric, { "Minkowski", "Schwarzschild", "Kerr" });
             menu.slider("Kerr spin", kerr_spin, -1.0f, 1.0f).format("%.4f").commit(commit_policy::throttle(50)).visible_if([&] { return metric.get() == 2; });
         }
 

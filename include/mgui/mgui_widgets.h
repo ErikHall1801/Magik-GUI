@@ -720,7 +720,17 @@ namespace mgui
         drag& range(elem_t lo, elem_t hi) { min_value = lo; max_value = hi; has_range = true; return *this; }
         drag& speed_per_pixel(float s) { speed = s; return *this; }
         drag& format(std::string fmt_) { fmt = std::move(fmt_); return *this; }
-        drag& logarithmic(bool l = true) { flags = l ? (flags | ImGuiSliderFlags_Logarithmic) : (flags & ~ImGuiSliderFlags_Logarithmic); return *this; }
+        /**
+        * Logarithmic response, for values spanning many decades (masses, ...). Needs a range(). ImGui divides
+        * the drag speed by the range in this mode, so the speed is derived from the range instead: one full
+        * sweep of the range takes `sweep_pixels` of mouse movement.
+        */
+        drag& logarithmic(bool l = true, float sweep_pixels = 2000.0f)
+        {
+            flags = l ? (flags | ImGuiSliderFlags_Logarithmic) : (flags & ~ImGuiSliderFlags_Logarithmic);
+            log_sweep_pixels = sweep_pixels;
+            return *this;
+        }
 
         /**
         * Stored in radians, shown and edited in degrees (float based types only).
@@ -739,6 +749,10 @@ namespace mgui
 
             float spd = speed;
             elem_t lo = min_value, hi = max_value;
+            if ((flags & ImGuiSliderFlags_Logarithmic) && has_range)
+            {
+                spd = static_cast<float>((static_cast<double>(hi) - static_cast<double>(lo)) / std::max(1.0, static_cast<double>(px(log_sweep_pixels))));
+            }
 
             if constexpr (!std::is_integral_v<elem_t>)
             {
@@ -764,6 +778,7 @@ namespace mgui
         }
 
         float speed;
+        float log_sweep_pixels = 2000.0f;
         elem_t min_value{}, max_value{};
         bool has_range = false;
         std::string fmt;
