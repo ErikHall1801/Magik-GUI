@@ -90,7 +90,7 @@ namespace magik_gui
             : position(position_), orientation(orientation_), pivot(pivot_) {}
 
         // Tuning, same feel as the Illyana controller
-        float orbit_speed_x = -14.0f;    // radians per viewport width
+        float orbit_speed_x = 14.0f;    // radians per viewport width
         float orbit_speed_y = 7.0f;
         float wheel_step = 0.25f;       // fraction of the distance per wheel notch
         float min_distance = 0.05f;     // metres
@@ -144,7 +144,7 @@ namespace magik_gui
                 const mat3 m = look_at(eye, center);
                 const vec3 right{ m[0][0], m[1][0], m[2][0] };
                 const vec3 up{ m[0][1], m[1][1], m[2][1] };
-                const vec3 move = add(mul(right, -delta.x / w * r), mul(up, delta.y / w * r));
+                const vec3 move = add(mul(right, delta.x / w * r), mul(up, delta.y / w * r));
                 eye = add(eye, move);
                 center = add(center, move);
             }
@@ -155,7 +155,7 @@ namespace magik_gui
                 float phi = std::atan2(offset[0], offset[2]);
 
                 theta -= delta.y / w * orbit_speed_y;
-                phi -= delta.x / w * orbit_speed_x;
+                phi += delta.x / w * orbit_speed_x;
                 theta = std::clamp(theta, 0.001f, 3.14059265f);   // stay off the poles, no flip over the top
 
                 const float new_r = std::max(min_distance, r * (1.0f - wheel * wheel_step));
