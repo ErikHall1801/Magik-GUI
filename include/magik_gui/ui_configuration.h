@@ -81,6 +81,22 @@ namespace magik_gui
             return out;
         }
 
+        /**
+        * Sends `Cmd` with `field` set to the value whenever the value changes (including once at start-up).
+        * For the many commands that carry a single number or enum:
+        *     detail::send(link, abs_tolerance, &magik_command_set_absolute_error_tolerance_t::absolute_error_tolerance);
+        */
+        template <typename Cmd, typename F, typename T>
+        void send(magik_link& link, mgui::value<T>& v, F Cmd::* field)
+        {
+            v.on_change([&link, field](const mgui::change<T>& c)
+            {
+                Cmd cmd;
+                cmd.*field = static_cast<F>(c.new_value);
+                link.push(cmd);
+            });
+        }
+
         inline std::vector<std::string> aov_names(const std::string& text)
         {
             std::vector<std::string> out;
@@ -138,6 +154,35 @@ namespace magik_gui
         auto& schw_negative = store.declare<bool>("scene.schwarzschild_negative", false);           // sign of M
         auto& kerr_mass     = store.declare<float>("scene.kerr_mass", 6.7329546075E26f);
         auto& kerr_spin     = store.declare<float>("scene.kerr_spin", 0.999f);
+        auto& schw_horizon  = store.declare<float>("scene.schwarzschild_horizon_scalar", 1.01f);
+        auto& kerr_horizon  = store.declare<float>("scene.kerr_horizon_scalar", 1.01f);
+        auto& sky_radius    = store.declare<float>("scene.celestial_sphere_radius", 1000.0f);    // m
+        // Integrator
+        auto& abs_tolerance = store.declare<float>("integrator.absolute_tolerance", 1e-3f);
+        auto& rel_tolerance = store.declare<float>("integrator.relative_tolerance", 1e-10f);
+        auto& max_substeps  = store.declare<int>("integrator.max_substeps", 56);
+        // Render limits
+        auto& step_limit    = store.declare<int>("render.geodesic_step_limit", 512);
+        auto& bounce_limit  = store.declare<int>("render.reflection_limit", 10);
+        // Color (defaults = Magik's color_settings_t)
+        auto& n_bins        = store.declare<int>("color.spectral_bins", 24);
+        auto& wl_min        = store.declare<float>("color.min_wavelength_nm", 360.0f);
+        auto& wl_max        = store.declare<float>("color.max_wavelength_nm", 830.0f);
+        auto& redist_sd     = store.declare<float>("color.redistribution_sd_nm", 10.0f);
+        auto& cmf           = store.declare<int>("color.cmf", MAGIK_CMF_CIE_1931);
+        auto& scene_cs      = store.declare<int>("color.scene_colorspace", MAGIK_SCENE_COLORSPACE_LINEAR_REC709);
+        auto& display_cs    = store.declare<int>("color.display_colorspace", MAGIK_DISPLAY_COLORSPACE_REC709);
+        auto& output_fmt    = store.declare<int>("color.output_format", MAGIK_OUTPUT_FORMAT_FLOAT32);
+        auto& white_point   = store.declare<float>("color.white_point_k", 5600.0f);
+        auto& tint          = store.declare<float>("color.tint", 0.0f);
+        auto& view_tf       = store.declare<int>("color.view_transform", MAGIK_VIEW_TRANSFORM_GRAN_TURISMO_7);
+        auto& reinhard_wl   = store.declare<float>("color.reinhard_white_luminance", 4.0f);
+        auto& pbr_start     = store.declare<float>("color.pbr_neutral_start_compression", 0.8f);
+        auto& pbr_desat     = store.declare<float>("color.pbr_neutral_desaturation", 0.15f);
+        auto& gt7_mode      = store.declare<int>("color.gt7_mode", MAGIK_GRAN_TURISMO_7_MODE_JZAZBZ);
+        auto& gt7_paper     = store.declare<float>("color.gt7_sdr_paper_white", 250.0f);
+        auto& gt7_ref       = store.declare<float>("color.gt7_reference_luminance", 100.0f);
+        auto& gt7_jz_scale  = store.declare<float>("color.gt7_jzazbz_exponent_scale", 1.7f);
         // AOVs
         auto& aovs          = store.declare<std::string>("aov.list", std::string("test:3"));
         auto& aov_selected  = store.declare<int>("aov.selected", 0).set_persist(false);
@@ -155,6 +200,27 @@ namespace magik_gui
         schw_mass.sanitize_with([](const float& m) { return std::max(std::fabs(m), detail::min_abs_mass); });
         active_camera.sanitize_with([](const int& id) { return std::max(id, 0); });
         aov_new_ch.sanitize_with([](const int& n) { return std::clamp(n, 1, 4); });
+
+        // Magik silently ignores values outside these limits, which would leave the GUI showing a value the
+        // renderer does not use, so the GUI enforces the same limits.
+        auto at_least = [](float lo) { return [lo](const float& x) { return std::max(x, lo); }; };
+        auto int_range = [](int lo, int hi) { return [lo, hi](const int& x) { return std::clamp(x, lo, hi); }; };
+        schw_horizon.sanitize_with(at_least(1.0001f));       // must be > 1
+        kerr_horizon.sanitize_with(at_least(1.0001f));
+        sky_radius.sanitize_with(at_least(1.0e-3f));         // > 0
+        abs_tolerance.sanitize_with(at_least(1.0e-30f));     // > 0
+        rel_tolerance.sanitize_with(at_least(1.0e-30f));
+        max_substeps.sanitize_with(int_range(1, 100000));    // > 0
+        step_limit.sanitize_with(int_range(1, 10000000));
+        bounce_limit.sanitize_with(int_range(1, 100000));
+        n_bins.sanitize_with(int_range(1, 64));              // 1 .. 64
+        wl_min.sanitize_with(at_least(1.0f));                // > 0
+        wl_max.sanitize_with(at_least(1.0f));
+        redist_sd.sanitize_with(at_least(0.01f));            // > 0
+        white_point.sanitize_with(at_least(500.0f));         // blackbody temperature
+        gt7_paper.sanitize_with(at_least(0.01f));            // > 0
+        gt7_ref.sanitize_with(at_least(0.01f));
+        gt7_jz_scale.sanitize_with(at_least(1.0001f));       // > 1
 
 
 
@@ -197,7 +263,7 @@ namespace magik_gui
 
         cam_velocity.on_change([&](const change<vec3>& c)
         {
-            magik_command_set_camera_three_velocity_t cmd;
+            magik_command_set_observer_local_proper_velocity_t cmd;
             cmd.velocity_x = c.new_value[0];
             cmd.velocity_y = c.new_value[1];
             cmd.velocity_z = c.new_value[2];
@@ -225,7 +291,7 @@ namespace magik_gui
 
         auto push_schwarzschild_mass = [&]
         {
-            magik_command_set_schwarzschild_mass_t cmd;
+            magik_command_set_schwarzschild_mass_parameter_t cmd;
             cmd.mass_parameter = schw_negative.get() ? -schw_mass.get() : schw_mass.get();
             link.push(cmd);
         };
@@ -234,15 +300,15 @@ namespace magik_gui
 
         kerr_mass.on_change([&](const change<float>& c)
         {
-            magik_command_set_kerr_mass_t cmd;
+            magik_command_set_kerr_mass_parameter_t cmd;
             cmd.mass_parameter = c.new_value;
             link.push(cmd);
         });
 
         kerr_spin.on_change([&](const change<float>& c)
         {
-            magik_command_set_kerr_spin_t cmd;
-            cmd.spin_parameter = c.new_value;
+            magik_command_set_kerr_dimensionless_spin_parameter_t cmd;
+            cmd.dimensionless_spin_parameter = c.new_value;
             link.push(cmd);
         });
 
@@ -266,6 +332,36 @@ namespace magik_gui
             // Keep the viewport on an AOV that exists
             if (!after.empty() && !after.count(a.displayed_aov->get())) a.displayed_aov->set(after.begin()->first);
         });
+
+        // Relativity / integrator
+        detail::send(link, schw_horizon,  &magik_command_set_schwarzschild_event_horizon_scalar_t::scalar);
+        detail::send(link, kerr_horizon,  &magik_command_set_kerr_event_horizon_scalar_t::scalar);
+        detail::send(link, sky_radius,    &magik_command_set_celestial_sphere_radius_t::celestial_sphere_radius);
+        detail::send(link, abs_tolerance, &magik_command_set_absolute_error_tolerance_t::absolute_error_tolerance);
+        detail::send(link, rel_tolerance, &magik_command_set_relative_error_tolerance_t::relative_error_tolerance);
+        detail::send(link, max_substeps,  &magik_command_set_max_substeps_t::max_substeps);
+        // Render limits
+        detail::send(link, step_limit,    &magik_command_set_n_geodesic_step_limit_t::n_geodesic_step_limit);
+        detail::send(link, bounce_limit,  &magik_command_set_n_reflected_limit_t::n_reflected_limit);
+        // Color
+        detail::send(link, n_bins,        &magik_command_set_n_intrinsic_spectral_irradiance_bin_t::n_isi_bin);
+        detail::send(link, wl_min,        &magik_command_set_sample_domain_minimum_wavelength_nm_t::minimum_wavelength_nm);
+        detail::send(link, wl_max,        &magik_command_set_sample_domain_maximum_wavelength_nm_t::maximum_wavelength_nm);
+        detail::send(link, redist_sd,     &magik_command_set_redistribution_standard_deviation_nm_t::standard_deviation_nm);
+        detail::send(link, cmf,           &magik_command_set_color_matching_function_t::cmf_type);
+        detail::send(link, scene_cs,      &magik_command_set_scene_colorspace_t::scene_colorspace);
+        detail::send(link, display_cs,    &magik_command_set_display_colorspace_t::display_colorspace);
+        detail::send(link, output_fmt,    &magik_command_set_output_format_t::output_format);
+        detail::send(link, white_point,   &magik_command_set_white_balance_white_point_t::white_point_kelvin);
+        detail::send(link, tint,          &magik_command_set_white_balance_tint_t::tint);
+        detail::send(link, view_tf,       &magik_command_set_view_transform_t::view_transform);
+        detail::send(link, reinhard_wl,   &magik_command_set_view_transform_reinhard_extended_white_luminance_t::white_luminance);
+        detail::send(link, pbr_start,     &magik_command_set_view_transform_khronos_pbr_neutral_start_compression_t::start_compression);
+        detail::send(link, pbr_desat,     &magik_command_set_view_transform_khronos_pbr_neutral_desaturation_t::desaturation);
+        detail::send(link, gt7_mode,      &magik_command_set_view_transform_gt7_mode_t::mode);
+        detail::send(link, gt7_paper,     &magik_command_set_view_transform_gt7_sdr_paper_white_balance_t::sdr_paper_white_balance);
+        detail::send(link, gt7_ref,       &magik_command_set_view_transform_gt7_reference_luminance_t::reference_luminance);
+        detail::send(link, gt7_jz_scale,  &magik_command_set_view_transform_gt7_jzazbz_exponent_scale_factor_t::jzazbz_exponent_scale_factor);
 
         log_commands.on_change([&](const change<bool>& c) { link.log_commands = c.new_value; });
 
@@ -306,6 +402,15 @@ namespace magik_gui
                 for (const auto& [name, channels] : detail::parse_aovs(aovs.get())) names.push_back(name);
                 return names;
             });
+
+            render.spinner("Geodesic steps", step_limit, 64)
+                .range(1, 10000000)
+                .commit(commit_policy::on_release())
+                .tooltip("Maximum geodesic steps over a whole path (not the bounce limit)");
+            render.spinner("Reflections", bounce_limit, 1)
+                .range(1, 100000)
+                .commit(commit_policy::on_release())
+                .tooltip("Maximum number of reflections");
         }
 
         // --- Camera ---
@@ -329,7 +434,7 @@ namespace magik_gui
             camera.drag("Velocity", cam_velocity, 1.0e5f)
                 .format("%.3g")
                 .commit(commit_policy::throttle(33))
-                .tooltip("Local three velocity in m/s");
+                .tooltip("Observer's local proper velocity in m/s. May exceed c locally, bounded by c globally.");
 
             camera.readout("|v| / c", [&]
             {
@@ -379,6 +484,11 @@ namespace magik_gui
             spacetime.readout("r_s", [&] { return detail::format("%.4g m", detail::schwarzschild_radius(schw_mass.get())); })
                 .tooltip("Schwarzschild radius 2GM / c^2")
                 .visible_if([&] { return metric.get() == 1; });
+            spacetime.slider("Horizon scalar", schw_horizon, 1.0001f, 1.5f)
+                .format("%.4f")
+                .commit(commit_policy::on_release())
+                .tooltip("Enlarges the event horizon slightly so geodesics terminate sooner. Must be > 1.")
+                .visible_if([&] { return metric.get() == 1; });
 
             spacetime.drag("Mass", kerr_mass)
                 .range(1.0f, 1.0e32f)
@@ -398,6 +508,111 @@ namespace magik_gui
             spacetime.readout("r_s", [&] { return detail::format("%.4g m", detail::schwarzschild_radius(kerr_mass.get())); })
                 .tooltip("2GM / c^2 of the Kerr mass")
                 .visible_if([&] { return metric.get() == 2; });
+            spacetime.slider("Horizon scalar", kerr_horizon, 1.0001f, 1.5f)
+                .format("%.4f")
+                .commit(commit_policy::on_release())
+                .tooltip("Enlarges the event horizon slightly so geodesics do not orbit for hundreds of steps. Must be > 1.")
+                .visible_if([&] { return metric.get() == 2; });
+
+            spacetime.drag("Celestial sphere", sky_radius)
+                .range(1.0e-3f, 1.0e9f)
+                .logarithmic()
+                .format("%.4g m")
+                .commit(commit_policy::on_release())
+                .tooltip("Radius of the celestial sphere centred on the observer");
+        }
+
+        // --- Integrator ---
+        auto& integrator = settings.section("Integrator", false);
+        {
+            integrator.drag("Absolute tolerance", abs_tolerance)
+                .range(1.0e-12f, 1.0f)
+                .logarithmic()
+                .format("%.2e")
+                .commit(commit_policy::on_release());
+            integrator.drag("Relative tolerance", rel_tolerance)
+                .range(1.0e-16f, 1.0f)
+                .logarithmic()
+                .format("%.2e")
+                .commit(commit_policy::on_release());
+            integrator.spinner("Max substeps", max_substeps, 1)
+                .range(1, 100000)
+                .commit(commit_policy::on_release())
+                .tooltip("Maximum RKF45 substeps per iteration");
+        }
+
+        // --- Color ---
+        auto& color = settings.section("Color", false);
+        {
+            color.spinner("Spectral bins", n_bins, 1)
+                .range(1, 64)
+                .commit(commit_policy::on_release())
+                .tooltip("Bins of the intrinsic spectral irradiance buffer. Diminishing returns past ~36.");
+            color.drag("Min wavelength", wl_min, 1.0f)
+                .range(1.0f, 5000.0f)
+                .format("%.0f nm")
+                .commit(commit_policy::on_release());
+            color.drag("Max wavelength", wl_max, 1.0f)
+                .range(1.0f, 5000.0f)
+                .format("%.0f nm")
+                .commit(commit_policy::on_release());
+            color.text("Min wavelength must be below max wavelength")
+                .colored(text::tone::warning)
+                .wrapped()
+                .visible_if([&] { return wl_min.get() >= wl_max.get(); });
+            color.drag("Redistribution SD", redist_sd, 0.1f)
+                .range(0.01f, 500.0f)
+                .format("%.1f nm")
+                .commit(commit_policy::on_release())
+                .tooltip("Standard deviation of the gaussian that spreads each sample over adjacent bins");
+            color.dropdown("Matching function", cmf, { "CIE 1931" });
+            color.dropdown("Scene colorspace", scene_cs, { "CIE XYZ", "CIE RGB", "Linear Rec.709", "Linear Rec.2020", "ACEScg", "Adobe RGB (1998)" });
+            color.dropdown("Display colorspace", display_cs, { "sRGB", "Rec.709", "Rec.2100 PQ", "Rec.2100 HLG", "DCI-P3 (theatrical white)", "Display P3", "Adobe RGB" });
+            color.dropdown("Output format", output_fmt, { "UNorm 8", "UNorm 10", "UNorm 12", "UNorm 16", "Float 16", "Float 32" });
+
+            color.separator("White balance");
+            color.drag("White point", white_point, 10.0f)
+                .range(500.0f, 40000.0f)
+                .format("%.0f K")
+                .commit(commit_policy::on_release());
+            color.slider("Tint", tint, -0.05f, 0.05f)
+                .format("%.4f")
+                .commit(commit_policy::on_release())
+                .tooltip("Offset from the blackbody locus in CIE uv (Duv)");
+
+            color.separator("View transform");
+            color.dropdown("View transform", view_tf, { "None", "Reinhard", "Reinhard extended", "Gran Turismo 7", "ACES 2", "AgX", "Khronos PBR Neutral", "Exponential" });
+            color.drag("White luminance", reinhard_wl, 0.01f)
+                .range(0.0f, 1000.0f)
+                .format("%.2f")
+                .commit(commit_policy::on_release())
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_REINHARD_EXTENDED; });
+            color.slider("Start compression", pbr_start, 0.0f, 1.0f)
+                .format("%.3f")
+                .commit(commit_policy::on_release())
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_KHRONOS_PBR_NEUTRAL; });
+            color.slider("Desaturation", pbr_desat, 0.0f, 1.0f)
+                .format("%.3f")
+                .commit(commit_policy::on_release())
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_KHRONOS_PBR_NEUTRAL; });
+            color.dropdown("GT7 mode", gt7_mode, { "ICtCp", "Jzazbz" })
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_GRAN_TURISMO_7; });
+            color.drag("SDR paper white", gt7_paper, 1.0f)
+                .range(0.01f, 10000.0f)
+                .format("%.0f nits")
+                .commit(commit_policy::on_release())
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_GRAN_TURISMO_7; });
+            color.drag("Reference luminance", gt7_ref, 1.0f)
+                .range(0.01f, 10000.0f)
+                .format("%.0f nits")
+                .commit(commit_policy::on_release())
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_GRAN_TURISMO_7; });
+            color.drag("Jzazbz exponent scale", gt7_jz_scale, 0.01f)
+                .range(1.0001f, 10.0f)
+                .format("%.3f")
+                .commit(commit_policy::on_release())
+                .tooltip("Must be > 1")
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_GRAN_TURISMO_7 && gt7_mode.get() == MAGIK_GRAN_TURISMO_7_MODE_JZAZBZ; });
         }
 
         // --- AOVs ---

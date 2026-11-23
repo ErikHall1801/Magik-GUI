@@ -155,7 +155,7 @@ namespace magik_gui
                 float phi = std::atan2(offset[0], offset[2]);
 
                 theta -= delta.y / w * orbit_speed_y;
-                phi += delta.x / w * orbit_speed_x;
+                phi -= delta.x / w * -orbit_speed_x;
                 theta = std::clamp(theta, 0.001f, 3.14059265f);   // stay off the poles, no flip over the top
 
                 const float new_r = std::max(min_distance, r * (1.0f - wheel * wheel_step));
