@@ -183,6 +183,7 @@ namespace magik_gui
         auto& gt7_paper     = store.declare<float>("color.gt7_sdr_paper_white", 250.0f);
         auto& gt7_ref       = store.declare<float>("color.gt7_reference_luminance", 100.0f);
         auto& gt7_jz_scale  = store.declare<float>("color.gt7_jzazbz_exponent_scale", 1.7f);
+        auto& agx_look      = store.declare<int>("color.agx_look", MAGIK_AGX_LOOK_PUNCHY);
         // AOVs
         auto& aovs          = store.declare<std::string>("aov.list", std::string("test:3"));
         auto& aov_selected  = store.declare<int>("aov.selected", 0).set_persist(false);
@@ -362,6 +363,7 @@ namespace magik_gui
         detail::send(link, gt7_paper,     &magik_command_set_view_transform_gt7_sdr_paper_white_balance_t::sdr_paper_white_balance);
         detail::send(link, gt7_ref,       &magik_command_set_view_transform_gt7_reference_luminance_t::reference_luminance);
         detail::send(link, gt7_jz_scale,  &magik_command_set_view_transform_gt7_jzazbz_exponent_scale_factor_t::jzazbz_exponent_scale_factor);
+        detail::send(link, agx_look,      &magik_command_set_view_transform_agx_look_t::look);
 
         log_commands.on_change([&](const change<bool>& c) { link.log_commands = c.new_value; });
 
@@ -581,7 +583,7 @@ namespace magik_gui
                 .tooltip("Offset from the blackbody locus in CIE uv (Duv)");
 
             color.separator("View transform");
-            color.dropdown("View transform", view_tf, { "None", "Reinhard", "Reinhard extended", "Gran Turismo 7", "ACES 2", "AgX", "Khronos PBR Neutral", "Exponential" });
+            color.dropdown("View transform", view_tf, { "None", "Reinhard", "Reinhard extended", "Gran Turismo 7", "AgX", "Khronos PBR Neutral" });
             color.drag("White luminance", reinhard_wl, 0.01f)
                 .range(0.0f, 1000.0f)
                 .format("%.2f")
@@ -613,6 +615,8 @@ namespace magik_gui
                 .commit(commit_policy::on_release())
                 .tooltip("Must be > 1")
                 .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_GRAN_TURISMO_7 && gt7_mode.get() == MAGIK_GRAN_TURISMO_7_MODE_JZAZBZ; });
+            color.dropdown("AgX look", agx_look, { "None", "Golden", "Punchy" })
+                .visible_if([&] { return view_tf.get() == MAGIK_VIEW_TRANSFORM_AGX; });
         }
 
         // --- AOVs ---
